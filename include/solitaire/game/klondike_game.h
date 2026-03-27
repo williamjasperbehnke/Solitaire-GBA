@@ -3,7 +3,7 @@
 
 #include <array>
 
-#include "bn_random.h"
+#include "bn_seed_random.h"
 #include "bn_vector.h"
 
 #include "solitaire/core/card.h"
@@ -21,6 +21,7 @@ namespace solitaire
     public:
         klondike_game();
 
+        void add_entropy(unsigned entropy);
         void reset();
 
         [[nodiscard]] bool draw_from_stock();
@@ -58,7 +59,8 @@ namespace solitaire
         klondike_dealer _dealer;
         klondike_rules _rules;
         klondike_held_state _held_state;
-        bn::random _random;
+        bn::seed_random _random;
+        unsigned _entropy_state = 0x6A09E667u;
     };
 
 }

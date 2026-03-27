@@ -3,7 +3,7 @@
 namespace solitaire
 {
 
-    void klondike_dealer::deal_new_game(bn::random& random, stock_pile& stock, waste_pile& waste,
+    void klondike_dealer::deal_new_game(bn::seed_random& random, stock_pile& stock, waste_pile& waste,
                                         foundation_piles& foundations, tableau_piles& tableaus) const
     {
         _clear_piles(stock, waste, foundations, tableaus);
@@ -39,7 +39,7 @@ namespace solitaire
         }
     }
 
-    void klondike_dealer::_shuffle_stock(bn::random& random, stock_pile& stock)
+    void klondike_dealer::_shuffle_stock(bn::seed_random& random, stock_pile& stock)
     {
         for(int index = stock.size() - 1; index > 0; --index)
         {

@@ -30,6 +30,7 @@ namespace solitaire
         bn::timer _time_timer;
         int _elapsed_ticks = 0;
         int _moves_count = 0;
+        unsigned _entropy_counter = 0;
     };
 
 }

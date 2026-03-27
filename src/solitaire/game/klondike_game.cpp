@@ -2,10 +2,23 @@
 
 namespace solitaire
 {
+    namespace
+    {
+        [[nodiscard]] unsigned mix_entropy(unsigned state, unsigned value)
+        {
+            // 32-bit mix similar to boost hash_combine for stable entropy accumulation.
+            return state ^ (value + 0x9E3779B9u + (state << 6) + (state >> 2));
+        }
+    }
 
     klondike_game::klondike_game()
     {
         _deal_new_game();
+    }
+
+    void klondike_game::add_entropy(unsigned entropy)
+    {
+        _entropy_state = mix_entropy(_entropy_state, entropy);
     }
 
     void klondike_game::reset()
@@ -326,6 +339,15 @@ namespace solitaire
 
     void klondike_game::_deal_new_game()
     {
+        _random.set_seed(_entropy_state);
+        const unsigned warmup_count = (_entropy_state & 31u) + 32u;
+
+        for(unsigned index = 0; index < warmup_count; ++index)
+        {
+            _random.update();
+        }
+
+        _entropy_state = mix_entropy(_entropy_state, _random.get());
         _dealer.deal_new_game(_random, _stock, _waste, _foundations, _tableaus);
         _held_state.reset_for_new_game();
     }

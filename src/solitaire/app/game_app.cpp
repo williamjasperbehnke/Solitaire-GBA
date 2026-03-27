@@ -1,11 +1,19 @@
 #include "solitaire/app/game_app.h"
 
+#include "bn_core.h"
 #include "bn_keypad.h"
 
 namespace solitaire
 {
 
-    game_app::game_app() = default;
+    game_app::game_app()
+    {
+        const unsigned initial_entropy = unsigned(bn::core::current_cpu_ticks()) ^
+                                         (unsigned(_time_timer.elapsed_ticks()) << 1) ^
+                                         0xA5A5A5A5u;
+        _game.add_entropy(initial_entropy);
+        _reset_run_state();
+    }
 
     void game_app::update()
     {
@@ -13,6 +21,13 @@ namespace solitaire
         {
             _elapsed_ticks = _time_timer.elapsed_ticks();
         }
+
+        const unsigned runtime_entropy = (_entropy_counter * 0x9E3779B9u) ^
+                                         unsigned(bn::core::current_cpu_ticks()) ^
+                                         (unsigned(_elapsed_ticks) << 11) ^
+                                         (bn::keypad::any_held() ? 0xD00DFEEDu : 0u);
+        _game.add_entropy(runtime_entropy);
+        ++_entropy_counter;
 
         _update_input();
         _renderer.render(_game, _selection, _elapsed_ticks, _moves_count);
