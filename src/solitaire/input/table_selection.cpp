@@ -4,6 +4,14 @@
 
 namespace solitaire
 {
+    namespace
+    {
+        [[nodiscard]] int abs_distance(int left, int right)
+        {
+            const int diff = left - right;
+            return diff < 0 ? -diff : diff;
+        }
+    }
 
     pile_ref table_selection::selected_pile() const
     {
@@ -149,6 +157,19 @@ namespace solitaire
     {
         if(int tableau_index = selected_tableau_index(); tableau_index >= 0)
         {
+            if(has_held_card)
+            {
+                _tableau_pick_depth_from_top = 0;
+
+                if(up_trigger)
+                {
+                    const int x = _pile_x_for_index(_selected_index);
+                    _selected_index = _nearest_top_row_index_for_x(x);
+                }
+
+                return;
+            }
+
             const int max_depth = selected_tableau_face_up_count > 0 ? selected_tableau_face_up_count - 1 : 0;
             if(_tableau_pick_depth_from_top > max_depth)
             {
@@ -184,6 +205,34 @@ namespace solitaire
         _tableau_pick_depth_from_top = 0;
     }
 
+    void table_selection::set_selected_pile(const pile_ref& pile, int tableau_pick_depth_from_top)
+    {
+        switch(pile.kind)
+        {
+            case pile_kind::stock:
+                _selected_index = table_layout::stock_selection_index;
+                _tableau_pick_depth_from_top = 0;
+                break;
+
+            case pile_kind::waste:
+                _selected_index = table_layout::waste_selection_index;
+                _tableau_pick_depth_from_top = 0;
+                break;
+
+            case pile_kind::foundation:
+                _selected_index = table_layout::first_foundation_selection_index + pile.index;
+                _tableau_pick_depth_from_top = 0;
+                break;
+
+            case pile_kind::tableau:
+                _selected_index = table_layout::first_tableau_selection_index + pile.index;
+                _tableau_pick_depth_from_top = tableau_pick_depth_from_top < 0 ? 0 : tableau_pick_depth_from_top;
+                break;
+            default:
+                break;
+        }
+    }
+
     int table_selection::_pile_x_for_index(int selected_index)
     {
         if(selected_index == table_layout::stock_selection_index)
@@ -208,20 +257,12 @@ namespace solitaire
     int table_selection::_nearest_top_row_index_for_x(int x)
     {
         int best_index = table_layout::stock_selection_index;
-        int best_distance = x - _pile_x_for_index(best_index);
-        if(best_distance < 0)
-        {
-            best_distance = -best_distance;
-        }
+        int best_distance = abs_distance(x, _pile_x_for_index(best_index));
 
         for(int index = table_layout::waste_selection_index; index <= table_layout::last_foundation_selection_index;
             ++index)
         {
-            int distance = x - _pile_x_for_index(index);
-            if(distance < 0)
-            {
-                distance = -distance;
-            }
+            const int distance = abs_distance(x, _pile_x_for_index(index));
             if(distance < best_distance)
             {
                 best_distance = distance;
@@ -235,19 +276,11 @@ namespace solitaire
     int table_selection::_nearest_tableau_index_for_x(int x)
     {
         int best_tableau = 0;
-        int best_distance = x - (table_layout::tableau_base_x + (best_tableau * table_layout::pile_x_step));
-        if(best_distance < 0)
-        {
-            best_distance = -best_distance;
-        }
+        int best_distance = abs_distance(x, table_layout::tableau_base_x + (best_tableau * table_layout::pile_x_step));
 
         for(int tableau_index = 1; tableau_index < 7; ++tableau_index)
         {
-            int distance = x - (table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step));
-            if(distance < 0)
-            {
-                distance = -distance;
-            }
+            const int distance = abs_distance(x, table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step));
             if(distance < best_distance)
             {
                 best_distance = distance;

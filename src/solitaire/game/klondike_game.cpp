@@ -14,6 +14,21 @@ namespace solitaire
         _deal_new_game();
     }
 
+    bool klondike_game::is_winnable_with_search(int node_budget) const
+    {
+        klondike_winnability_filter filter;
+        return filter.is_likely_winnable(_stock, _waste, _foundations, _tableaus, node_budget);
+    }
+
+    deal_quality klondike_game::classify_deal_with_search(int easy_win_depth_limit, int hard_search_depth_limit,
+                                                          int easy_search_node_budget,
+                                                          int hard_search_node_budget) const
+    {
+        klondike_winnability_filter filter;
+        return filter.classify_deal(_stock, _waste, _foundations, _tableaus, easy_win_depth_limit,
+                                    hard_search_depth_limit, easy_search_node_budget, hard_search_node_budget);
+    }
+
     bool klondike_game::draw_from_stock()
     {
         if(! _stock.empty())
@@ -149,12 +164,7 @@ namespace solitaire
                 }
 
                 _foundations[to.index].push_back(moving_base_card);
-                _held_state.finish_successful_place();
-                if(_held_state.pending_tableau_flip())
-                {
-                    _flip_tableau_if_needed(_held_state.pending_tableau_flip_index());
-                    _held_state.clear_pending_tableau_flip();
-                }
+                _finish_successful_place();
                 return true;
             }
 
@@ -171,12 +181,7 @@ namespace solitaire
                     target_face_up.push_back(value);
                 }
 
-                _held_state.finish_successful_place();
-                if(_held_state.pending_tableau_flip())
-                {
-                    _flip_tableau_if_needed(_held_state.pending_tableau_flip_index());
-                    _held_state.clear_pending_tableau_flip();
-                }
+                _finish_successful_place();
                 return true;
             }
             default:
@@ -339,6 +344,16 @@ namespace solitaire
         {
             tableau.face_up.push_back(tableau.face_down.back());
             tableau.face_down.pop_back();
+        }
+    }
+
+    void klondike_game::_finish_successful_place()
+    {
+        _held_state.finish_successful_place();
+        if(_held_state.pending_tableau_flip())
+        {
+            _flip_tableau_if_needed(_held_state.pending_tableau_flip_index());
+            _held_state.clear_pending_tableau_flip();
         }
     }
 

@@ -33,6 +33,7 @@ namespace solitaire
         void move_horizontal(bool left_trigger, bool right_trigger);
         void move_vertical(bool up_trigger, bool down_trigger, bool has_held_card, int selected_tableau_face_up_count);
         void reset_tableau_pick_depth();
+        void set_selected_pile(const pile_ref& pile, int tableau_pick_depth_from_top = 0);
 
     private:
         [[nodiscard]] static int _pile_x_for_index(int selected_index);

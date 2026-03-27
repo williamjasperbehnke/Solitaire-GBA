@@ -11,6 +11,7 @@
 #include "solitaire/game/klondike_held_state.h"
 #include "solitaire/game/klondike_rules.h"
 #include "solitaire/game/klondike_types.h"
+#include "solitaire/game/klondike_winnability_filter.h"
 #include "solitaire/core/pile_ref.h"
 
 namespace solitaire
@@ -23,6 +24,10 @@ namespace solitaire
 
         void set_seed(unsigned seed);
         void reset();
+        [[nodiscard]] bool is_winnable_with_search(int node_budget) const;
+        [[nodiscard]] deal_quality classify_deal_with_search(int easy_win_depth_limit, int hard_search_depth_limit,
+                                                             int easy_search_node_budget,
+                                                             int hard_search_node_budget) const;
 
         [[nodiscard]] bool draw_from_stock();
         [[nodiscard]] bool try_pick(const pile_ref& from, int tableau_depth_from_top = 0);
@@ -50,6 +55,7 @@ namespace solitaire
     private:
         void _deal_new_game();
         void _flip_tableau_if_needed(int tableau_index);
+        void _finish_successful_place();
 
         stock_pile _stock;
         waste_pile _waste;

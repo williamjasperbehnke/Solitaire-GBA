@@ -3,9 +3,11 @@
 
 #include "bn_regular_bg_ptr.h"
 #include "bn_sprite_ptr.h"
+#include "bn_string.h"
 #include "bn_sprite_text_generator.h"
 #include "bn_vector.h"
 
+#include "solitaire/core/pile_ref.h"
 #include "solitaire/game/klondike_game.h"
 #include "solitaire/input/table_selection.h"
 
@@ -15,11 +17,18 @@ namespace solitaire
     class game_renderer
     {
     public:
+        struct hint_highlight
+        {
+            bool has_move = false;
+            pile_ref from = { pile_kind::stock, 0 };
+            pile_ref to = { pile_kind::stock, 0 };
+        };
+
         game_renderer();
 
         void render(const klondike_game& game, const table_selection& selection, int elapsed_ticks, int moves_count,
                     bool show_press_start_prompt, bool show_deal_animation, int deal_animation_frame,
-                    unsigned animation_frame);
+                    unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells);
 
     private:
         void _render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
@@ -27,7 +36,7 @@ namespace solitaire
         void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
                              card& top_card);
         void _render_held_cards(const klondike_game& game);
-        void _render_status_message(const klondike_game& game);
+        void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text);
         void _render_press_start_prompt(unsigned animation_frame);
         void _render_deal_animation(const klondike_game& game, int deal_animation_frame);
 
@@ -36,7 +45,9 @@ namespace solitaire
         void _draw_card_sprite(const card& value, int x, int y);
         void _draw_held_card_sprite(const card& value, int x, int y);
         void _draw_card_back_sprite(int x, int y);
+        void _draw_hint_cell_sprite(int x, int y, bool use_waste_style);
         void _update_selection_highlight(int x, int y, bool use_waste_style);
+        void _update_hint_highlights(const hint_highlight* hint_cells);
 
         [[nodiscard]] static bn::string<32> _time_moves_text(int elapsed_ticks, int moves_count);
 

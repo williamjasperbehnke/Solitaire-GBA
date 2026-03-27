@@ -3,6 +3,8 @@
 #include "bn_regular_bg_items_slot_highlight_bg.h"
 #include "bn_regular_bg_items_table_bg.h"
 #include "bn_regular_bg_items_waste_highlight_bg.h"
+#include "bn_sprite_items_hint_slot_cell_highlight.h"
+#include "bn_sprite_items_hint_waste_cell_highlight.h"
 #include "bn_sprite_tiles_items_held_panel_parts.h"
 #include "bn_string.h"
 #include "bn_timers.h"
@@ -39,6 +41,12 @@ namespace solitaire
         constexpr int selected_card_lift_y = -4;
         constexpr int dealing_card_lift_frames = 3;
         constexpr int deal_animation_cards = 28;
+        constexpr int prompt_bob_period_frames = 24;
+        constexpr int prompt_blink_period_frames = 40;
+        constexpr int prompt_base_x = -92;
+        constexpr int prompt_base_y = 28;
+        constexpr int prompt_indicator_offset_x = 168;
+        constexpr int waste_hint_x_offset = 8;
 
         constexpr int panel_tile_size = 16;
         constexpr int panel_tile_half = panel_tile_size / 2;
@@ -50,9 +58,13 @@ namespace solitaire
 
         [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count)
         {
-            if(face_up_count <= 10)
+            if(face_up_count <= 6)
             {
                 return 7;
+            }
+            if(face_up_count <= 10)
+            {
+                return 6;
             }
             if(face_up_count <= 14)
             {
@@ -100,6 +112,42 @@ namespace solitaire
             column = 6;
             row = 6;
         }
+
+        [[nodiscard]] table_selection::highlight_state highlight_for_pile(const pile_ref& pile)
+        {
+            table_selection::highlight_state state;
+
+            switch(pile.kind)
+            {
+                case pile_kind::stock:
+                    state.x = table_layout::stock_x;
+                    state.y = table_layout::top_row_y;
+                    state.use_waste_style = false;
+                    break;
+
+                case pile_kind::waste:
+                    state.x = table_layout::waste_x;
+                    state.y = table_layout::top_row_y;
+                    state.use_waste_style = true;
+                    break;
+
+                case pile_kind::foundation:
+                    state.x = table_layout::foundation_base_x + (pile.index * table_layout::pile_x_step);
+                    state.y = table_layout::top_row_y;
+                    state.use_waste_style = false;
+                    break;
+
+                case pile_kind::tableau:
+                    state.x = table_layout::tableau_base_x + (pile.index * table_layout::pile_x_step);
+                    state.y = table_layout::tableau_base_y;
+                    state.use_waste_style = false;
+                    break;
+                default:
+                    break;
+            }
+
+            return state;
+        }
     }
 
     game_renderer::game_renderer() :
@@ -121,7 +169,8 @@ namespace solitaire
 
     void game_renderer::render(const klondike_game& game, const table_selection& selection, int elapsed_ticks,
                                int moves_count, bool show_press_start_prompt, bool show_deal_animation,
-                               int deal_animation_frame, unsigned animation_frame)
+                               int deal_animation_frame, unsigned animation_frame, const bn::string<48>* hint_text,
+                               const hint_highlight* hint_cells)
     {
         _text_sprites.clear();
         _card_sprites.clear();
@@ -138,6 +187,7 @@ namespace solitaire
         {
             _slot_highlight_bg.set_visible(false);
             _waste_highlight_bg.set_visible(false);
+            _update_hint_highlights(nullptr);
             _render_press_start_prompt(animation_frame);
             return;
         }
@@ -146,33 +196,41 @@ namespace solitaire
         {
             _slot_highlight_bg.set_visible(false);
             _waste_highlight_bg.set_visible(false);
+            _update_hint_highlights(nullptr);
             _render_deal_animation(game, deal_animation_frame);
             return;
         }
 
-        const table_selection::highlight_state highlight = selection.highlight();
-        _update_selection_highlight(highlight.x, highlight.y, highlight.use_waste_style);
+        if(hint_cells && hint_cells->has_move)
+        {
+            _update_hint_highlights(hint_cells);
+        }
+        else
+        {
+            const table_selection::highlight_state highlight = selection.highlight();
+            _update_selection_highlight(highlight.x, highlight.y, highlight.use_waste_style);
+            _update_hint_highlights(nullptr);
+        }
 
         card top_card;
         const bool lift_selected_card = ! game.has_held_card();
         _render_top_row(game, selection, lift_selected_card, top_card);
         _render_tableau(game, selection, lift_selected_card, top_card);
         _render_held_cards(game);
-        _render_status_message(game);
+        _render_status_message(game, hint_text);
     }
 
     void game_renderer::_render_press_start_prompt(unsigned animation_frame)
     {
-        const int bob_offset = ((animation_frame / 24) % 2) ? -1 : 1;
-        const bool show_indicator = ((animation_frame / 40) % 2) == 0;
-        constexpr int base_x = -92;
-        const int y = 28 + bob_offset;
+        const int bob_offset = ((animation_frame / prompt_bob_period_frames) % 2) ? -1 : 1;
+        const bool show_indicator = ((animation_frame / prompt_blink_period_frames) % 2) == 0;
+        const int y = prompt_base_y + bob_offset;
 
         _text_generator.set_left_alignment();
-        _text_generator.generate(base_x, y, "PRESS START TO DEAL", _text_sprites);
+        _text_generator.generate(prompt_base_x, y, "PRESS START TO DEAL", _text_sprites);
         if(show_indicator)
         {
-            _text_generator.generate(base_x + 168, y, ">>", _text_sprites);
+            _text_generator.generate(prompt_base_x + prompt_indicator_offset_x, y, ">>", _text_sprites);
         }
     }
 
@@ -331,9 +389,13 @@ namespace solitaire
         }
     }
 
-    void game_renderer::_render_status_message(const klondike_game& game)
+    void game_renderer::_render_status_message(const klondike_game& game, const bn::string<48>* hint_text)
     {
-        if(game.has_held_card())
+        if(hint_text)
+        {
+            _text_generator.generate(hud_x, status_y, *hint_text, _text_sprites);
+        }
+        else if(game.has_held_card())
         {
             _text_generator.generate(hud_x, status_y, "HOLD", _text_sprites);
         }
@@ -428,6 +490,39 @@ namespace solitaire
             _slot_highlight_bg.set_position(x, y);
             _slot_highlight_bg.set_visible(true);
         }
+    }
+
+    void game_renderer::_update_hint_highlights(const hint_highlight* hint_cells)
+    {
+        if(! hint_cells || ! hint_cells->has_move)
+        {
+            return;
+        }
+
+        const table_selection::highlight_state from = highlight_for_pile(hint_cells->from);
+        const table_selection::highlight_state to = highlight_for_pile(hint_cells->to);
+
+        // Keep the regular selection highlight for the source hint cell.
+        _update_selection_highlight(from.x, from.y, from.use_waste_style);
+        _draw_hint_cell_sprite(from.x, from.y, from.use_waste_style);
+        if(from.x != to.x || from.y != to.y || from.use_waste_style != to.use_waste_style)
+        {
+            _draw_hint_cell_sprite(to.x, to.y, to.use_waste_style);
+        }
+    }
+
+    void game_renderer::_draw_hint_cell_sprite(int x, int y, bool use_waste_style)
+    {
+        if(use_waste_style)
+        {
+            x += waste_hint_x_offset;
+        }
+
+        bn::sprite_ptr sprite = use_waste_style ? bn::sprite_items::hint_waste_cell_highlight.create_sprite(x, y) :
+                                                  bn::sprite_items::hint_slot_cell_highlight.create_sprite(x, y);
+        sprite.set_bg_priority(2);
+        sprite.set_z_order(1);
+        _card_sprites.push_back(bn::move(sprite));
     }
 
     bn::string<32> game_renderer::_time_moves_text(int elapsed_ticks, int moves_count)
