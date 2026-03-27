@@ -1,0 +1,7 @@
+{
+  "type": "sprite_tiles",
+  "bpp_mode": "bpp_4",
+  "width": 16,
+  "height": 16,
+  "graphics_count": 6
+}

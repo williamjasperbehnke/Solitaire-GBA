@@ -3,7 +3,7 @@
 
 #include "bn_sprite_item.h"
 
-#include "solitaire/card.h"
+#include "solitaire/core/card.h"
 
 namespace solitaire
 {

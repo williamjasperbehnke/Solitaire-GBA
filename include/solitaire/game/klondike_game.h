@@ -6,24 +6,15 @@
 #include "bn_random.h"
 #include "bn_vector.h"
 
-#include "solitaire/card.h"
+#include "solitaire/core/card.h"
+#include "solitaire/game/klondike_dealer.h"
+#include "solitaire/game/klondike_held_state.h"
+#include "solitaire/game/klondike_rules.h"
+#include "solitaire/game/klondike_types.h"
+#include "solitaire/core/pile_ref.h"
 
 namespace solitaire
 {
-
-    enum class pile_kind
-    {
-        stock,
-        waste,
-        foundation,
-        tableau,
-    };
-
-    struct pile_ref
-    {
-        pile_kind kind = pile_kind::stock;
-        int index = 0;
-    };
 
     class klondike_game
     {
@@ -56,30 +47,18 @@ namespace solitaire
         [[nodiscard]] bool has_won() const;
 
     private:
-        struct tableau_pile
-        {
-            bn::vector<card, 19> face_down;
-            bn::vector<card, 19> face_up;
-        };
-
         void _deal_new_game();
         void _flip_tableau_if_needed(int tableau_index);
 
-        [[nodiscard]] bool _can_place_on_foundation(const card& moving_card, int foundation_index) const;
-        [[nodiscard]] bool _can_place_on_tableau(const card& moving_card, int tableau_index) const;
+        stock_pile _stock;
+        waste_pile _waste;
+        foundation_piles _foundations;
+        tableau_piles _tableaus;
 
-        bn::vector<card, 52> _stock;
-        bn::vector<card, 52> _waste;
-        std::array<bn::vector<card, 13>, 4> _foundations;
-        std::array<tableau_pile, 7> _tableaus;
-
+        klondike_dealer _dealer;
+        klondike_rules _rules;
+        klondike_held_state _held_state;
         bn::random _random;
-
-        bool _has_held_card = false;
-        bn::vector<card, 19> _held_cards;
-        pile_ref _held_from;
-        bool _pending_tableau_flip = false;
-        int _pending_tableau_flip_index = 0;
     };
 
 }

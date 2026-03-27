@@ -2,7 +2,7 @@
 #include "bn_color.h"
 #include "bn_core.h"
 
-#include "solitaire/game_app.h"
+#include "solitaire/app/game_app.h"
 
 int main()
 {

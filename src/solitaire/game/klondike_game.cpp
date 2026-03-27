@@ -1,4 +1,4 @@
-#include "solitaire/klondike_game.h"
+#include "solitaire/game/klondike_game.h"
 
 namespace solitaire
 {
@@ -38,13 +38,13 @@ namespace solitaire
 
     bool klondike_game::try_pick(const pile_ref& from, int tableau_depth_from_top)
     {
-        if(_has_held_card)
+        if(_held_state.has_held_card())
         {
             return false;
         }
 
-        _pending_tableau_flip = false;
-        _held_cards.clear();
+        _held_state.clear_before_pick();
+        auto& held_cards = _held_state.held_cards();
 
         switch(from.kind)
         {
@@ -56,7 +56,7 @@ namespace solitaire
                 {
                     return false;
                 }
-                _held_cards.push_back(_waste.back());
+                held_cards.push_back(_waste.back());
                 _waste.pop_back();
                 break;
 
@@ -67,7 +67,7 @@ namespace solitaire
                 {
                     return false;
                 }
-                _held_cards.push_back(foundation.back());
+                held_cards.push_back(foundation.back());
                 foundation.pop_back();
                 break;
             }
@@ -89,7 +89,7 @@ namespace solitaire
                 const int pickup_index = face_up_size - 1 - tableau_depth_from_top;
                 for(int index = pickup_index; index < face_up_size; ++index)
                 {
-                    _held_cards.push_back(tableau.face_up[index]);
+                    held_cards.push_back(tableau.face_up[index]);
                 }
 
                 while(tableau.face_up.size() > pickup_index)
@@ -99,8 +99,7 @@ namespace solitaire
 
                 if(tableau.face_up.empty() && ! tableau.face_down.empty())
                 {
-                    _pending_tableau_flip = true;
-                    _pending_tableau_flip_index = from.index;
+                    _held_state.set_pending_tableau_flip(from.index);
                 }
                 break;
             }
@@ -108,25 +107,25 @@ namespace solitaire
                 return false;
         }
 
-        _has_held_card = true;
-        _held_from = from;
+        _held_state.begin_hold_from(from);
         return true;
     }
 
     bool klondike_game::try_place(const pile_ref& to)
     {
-        if(! _has_held_card)
+        if(! _held_state.has_held_card())
         {
             return false;
         }
 
-        if(to.kind == _held_from.kind && to.index == _held_from.index)
+        if(to.kind == _held_state.held_from().kind && to.index == _held_state.held_from().index)
         {
             cancel_held();
             return true;
         }
 
-        const card& moving_base_card = _held_cards.front();
+        auto& held_cards = _held_state.held_cards();
+        const card& moving_base_card = held_cards.front();
 
         switch(to.kind)
         {
@@ -138,46 +137,44 @@ namespace solitaire
 
             case pile_kind::foundation:
             {
-                if(_held_cards.size() != 1)
+                if(held_cards.size() != 1)
                 {
                     return false;
                 }
 
-                if(! _can_place_on_foundation(moving_base_card, to.index))
+                if(! _rules.can_place_on_foundation(moving_base_card, _foundations[to.index]))
                 {
                     return false;
                 }
 
                 _foundations[to.index].push_back(moving_base_card);
-                _held_cards.clear();
-                _has_held_card = false;
-                if(_pending_tableau_flip)
+                _held_state.finish_successful_place();
+                if(_held_state.pending_tableau_flip())
                 {
-                    _flip_tableau_if_needed(_pending_tableau_flip_index);
-                    _pending_tableau_flip = false;
+                    _flip_tableau_if_needed(_held_state.pending_tableau_flip_index());
+                    _held_state.clear_pending_tableau_flip();
                 }
                 return true;
             }
 
             case pile_kind::tableau:
             {
-                if(! _can_place_on_tableau(moving_base_card, to.index))
+                if(! _rules.can_place_on_tableau(moving_base_card, _tableaus[to.index]))
                 {
                     return false;
                 }
 
                 auto& target_face_up = _tableaus[to.index].face_up;
-                for(const card& value : _held_cards)
+                for(const card& value : held_cards)
                 {
                     target_face_up.push_back(value);
                 }
 
-                _held_cards.clear();
-                _has_held_card = false;
-                if(_pending_tableau_flip)
+                _held_state.finish_successful_place();
+                if(_held_state.pending_tableau_flip())
                 {
-                    _flip_tableau_if_needed(_pending_tableau_flip_index);
-                    _pending_tableau_flip = false;
+                    _flip_tableau_if_needed(_held_state.pending_tableau_flip_index());
+                    _held_state.clear_pending_tableau_flip();
                 }
                 return true;
             }
@@ -188,67 +185,68 @@ namespace solitaire
 
     void klondike_game::cancel_held()
     {
-        if(! _has_held_card)
+        if(! _held_state.has_held_card())
         {
             return;
         }
 
-        switch(_held_from.kind)
+        const pile_ref& held_from = _held_state.held_from();
+        const auto& held_cards = _held_state.held_cards();
+
+        switch(held_from.kind)
         {
             case pile_kind::stock:
-                for(const card& value : _held_cards)
+                for(const card& value : held_cards)
                 {
                     _stock.push_back(value);
                 }
                 break;
 
             case pile_kind::waste:
-                for(const card& value : _held_cards)
+                for(const card& value : held_cards)
                 {
                     _waste.push_back(value);
                 }
                 break;
 
             case pile_kind::foundation:
-                for(const card& value : _held_cards)
+                for(const card& value : held_cards)
                 {
-                    _foundations[_held_from.index].push_back(value);
+                    _foundations[held_from.index].push_back(value);
                 }
                 break;
 
             case pile_kind::tableau:
-                for(const card& value : _held_cards)
+                for(const card& value : held_cards)
                 {
-                    _tableaus[_held_from.index].face_up.push_back(value);
+                    _tableaus[held_from.index].face_up.push_back(value);
                 }
                 break;
             default:
                 break;
         }
 
-        _held_cards.clear();
-        _has_held_card = false;
-        _pending_tableau_flip = false;
+        _held_state.clear_all();
     }
 
     bool klondike_game::has_held_card() const
     {
-        return _has_held_card;
+        return _held_state.has_held_card();
     }
 
     const card& klondike_game::held_card(int index) const
     {
-        return _held_cards[index];
+        return _held_state.held_cards()[index];
     }
 
     int klondike_game::held_cards_count() const
     {
-        return _held_cards.size();
+        return _held_state.held_cards().size();
     }
 
     const pile_ref& klondike_game::held_from() const
     {
-        return _held_from;
+        return _held_state.held_from();
     }
 
     int klondike_game::stock_size() const
@@ -328,51 +326,8 @@ namespace solitaire
 
     void klondike_game::_deal_new_game()
     {
-        _stock.clear();
-        _waste.clear();
-        for(auto& foundation : _foundations)
-        {
-            foundation.clear();
-        }
-        for(auto& tableau : _tableaus)
-        {
-            tableau.face_down.clear();
-            tableau.face_up.clear();
-        }
-
-        _has_held_card = false;
-        _held_cards.clear();
-        _pending_tableau_flip = false;
-
-        for(int suit_index = 0; suit_index < 4; ++suit_index)
-        {
-            for(int rank = 1; rank <= 13; ++rank)
-            {
-                _stock.push_back(card { rank, static_cast<suit>(suit_index) });
-            }
-        }
-
-        for(int index = _stock.size() - 1; index > 0; --index)
-        {
-            int swap_index = _random.get_int(index + 1);
-            card temp = _stock[index];
-            _stock[index] = _stock[swap_index];
-            _stock[swap_index] = temp;
-        }
-
-        for(int tableau_index = 0; tableau_index < 7; ++tableau_index)
-        {
-            auto& tableau = _tableaus[tableau_index];
-
-            for(int down_count = 0; down_count < tableau_index; ++down_count)
-            {
-                tableau.face_down.push_back(_stock.back());
-                _stock.pop_back();
-            }
-
-            tableau.face_up.push_back(_stock.back());
-            _stock.pop_back();
-        }
+        _dealer.deal_new_game(_random, _stock, _waste, _foundations, _tableaus);
+        _held_state.reset_for_new_game();
     }
 
     void klondike_game::_flip_tableau_if_needed(int tableau_index)
@@ -383,30 +338,6 @@ namespace solitaire
             tableau.face_up.push_back(tableau.face_down.back());
             tableau.face_down.pop_back();
         }
-    }
-
-    bool klondike_game::_can_place_on_foundation(const card& moving_card, int foundation_index) const
-    {
-        const auto& foundation = _foundations[foundation_index];
-        if(foundation.empty())
-        {
-            return moving_card.rank == 1;
-        }
-
-        const card& top_card = foundation.back();
-        return moving_card.card_suit == top_card.card_suit && moving_card.rank == (top_card.rank + 1);
-    }
-
-    bool klondike_game::_can_place_on_tableau(const card& moving_card, int tableau_index) const
-    {
-        const auto& face_up = _tableaus[tableau_index].face_up;
-        if(face_up.empty())
-        {
-            return moving_card.rank == 13;
-        }
-
-        const card& top_card = face_up.back();
-        return moving_card.rank == (top_card.rank - 1) && moving_card.is_red() != top_card.is_red();
     }
 
 }

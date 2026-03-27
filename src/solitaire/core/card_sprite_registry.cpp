@@ -1,4 +1,4 @@
-#include "solitaire/card_sprite_registry.h"
+#include "solitaire/core/card_sprite_registry.h"
 
 #include "bn_sprite_items_card_a_c.h"
 #include "bn_sprite_items_card_a_d.h"

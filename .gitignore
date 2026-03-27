@@ -5,3 +5,5 @@
 *.sav
 .DS_Store
 third_party/
+cards/
+graphics/table_bg_layers/
