@@ -52,18 +52,24 @@ namespace solitaire
 
     void klondike_dealer::_deal_tableau(stock_pile& stock, tableau_piles& tableaus)
     {
-        for(int tableau_index = 0; tableau_index < 7; ++tableau_index)
+        // Standard Klondike deal order: row by row across columns.
+        for(int row = 0; row < 7; ++row)
         {
-            auto& tableau = tableaus[tableau_index];
-
-            for(int down_count = 0; down_count < tableau_index; ++down_count)
+            for(int tableau_index = row; tableau_index < 7; ++tableau_index)
             {
-                tableau.face_down.push_back(stock.back());
+                auto& tableau = tableaus[tableau_index];
+                const card dealt_card = stock.back();
                 stock.pop_back();
-            }
 
-            tableau.face_up.push_back(stock.back());
-            stock.pop_back();
+                if(row == tableau_index)
+                {
+                    tableau.face_up.push_back(dealt_card);
+                }
+                else
+                {
+                    tableau.face_down.push_back(dealt_card);
+                }
+            }
         }
     }
 

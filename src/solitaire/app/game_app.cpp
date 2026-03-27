@@ -5,32 +5,62 @@
 
 namespace solitaire
 {
+    namespace
+    {
+        constexpr int deal_animation_frames_per_card = 3;
+        constexpr int deal_animation_cards = 28;
+        constexpr int deal_animation_total_frames = deal_animation_frames_per_card * deal_animation_cards;
+    }
 
     game_app::game_app()
     {
-        const unsigned initial_entropy = unsigned(bn::core::current_cpu_ticks()) ^
-                                         (unsigned(_time_timer.elapsed_ticks()) << 1) ^
-                                         0xA5A5A5A5u;
-        _game.add_entropy(initial_entropy);
-        _reset_run_state();
+        _selection.reset_tableau_pick_depth();
     }
 
     void game_app::update()
     {
-        if(! _game.has_won())
+        ++_runtime_frames;
+
+        if(_phase == run_phase::awaiting_deal)
         {
-            _elapsed_ticks = _time_timer.elapsed_ticks();
+            if(bn::keypad::start_pressed())
+            {
+                _begin_deal();
+            }
+        }
+        else if(_phase == run_phase::dealing)
+        {
+            ++_deal_animation_frame;
+            if(_deal_animation_frame >= deal_animation_total_frames)
+            {
+                _phase = run_phase::playing;
+                _time_timer.restart();
+                _elapsed_ticks = 0;
+            }
+        }
+        else
+        {
+            if(! _game.has_won())
+            {
+                _elapsed_ticks = _time_timer.elapsed_ticks();
+            }
+            _update_input();
         }
 
-        const unsigned runtime_entropy = (_entropy_counter * 0x9E3779B9u) ^
-                                         unsigned(bn::core::current_cpu_ticks()) ^
-                                         (unsigned(_elapsed_ticks) << 11) ^
-                                         (bn::keypad::any_held() ? 0xD00DFEEDu : 0u);
-        _game.add_entropy(runtime_entropy);
-        ++_entropy_counter;
+        _renderer.render(_game, _selection, _elapsed_ticks, _moves_count, _phase == run_phase::awaiting_deal,
+                         _phase == run_phase::dealing, _deal_animation_frame, _runtime_frames);
+    }
 
-        _update_input();
-        _renderer.render(_game, _selection, _elapsed_ticks, _moves_count);
+    void game_app::_begin_deal()
+    {
+        _game.set_seed(_run_seed.next_auto_seed(_auto_seed_entropy()));
+        _game.reset();
+        _selection.reset_tableau_pick_depth();
+        _time_timer.restart();
+        _elapsed_ticks = 0;
+        _moves_count = 0;
+        _deal_animation_frame = 0;
+        _phase = run_phase::dealing;
     }
 
     void game_app::_update_input()
@@ -44,7 +74,8 @@ namespace solitaire
 
         if(bn::keypad::start_pressed())
         {
-            _reset_run_state();
+            _game.cancel_held();
+            _phase = run_phase::awaiting_deal;
             return;
         }
 
@@ -64,11 +95,16 @@ namespace solitaire
 
     void game_app::_reset_run_state()
     {
-        _game.reset();
-        _selection.reset_tableau_pick_depth();
-        _time_timer.restart();
-        _elapsed_ticks = 0;
-        _moves_count = 0;
+        _begin_deal();
+    }
+
+    unsigned game_app::_auto_seed_entropy() const
+    {
+        // Keeps blockudoku's cycle-based source and mixes in runtime progression.
+        return unsigned(bn::core::current_cpu_ticks()) ^
+               (unsigned(_entropy_timer.elapsed_ticks()) << 8) ^
+               (_runtime_frames * 0x9E3779B9u) ^
+               (bn::keypad::any_held() ? 0xA511E9B3u : 0u);
     }
 
     void game_app::_handle_primary_action()

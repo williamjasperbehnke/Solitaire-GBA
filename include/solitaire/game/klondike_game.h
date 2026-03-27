@@ -21,7 +21,7 @@ namespace solitaire
     public:
         klondike_game();
 
-        void add_entropy(unsigned entropy);
+        void set_seed(unsigned seed);
         void reset();
 
         [[nodiscard]] bool draw_from_stock();
@@ -60,7 +60,7 @@ namespace solitaire
         klondike_rules _rules;
         klondike_held_state _held_state;
         bn::seed_random _random;
-        unsigned _entropy_state = 0x6A09E667u;
+        unsigned _seed = 1;
     };
 
 }

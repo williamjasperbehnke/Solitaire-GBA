@@ -37,6 +37,8 @@ namespace solitaire
 
         constexpr int selected_card_lift_x = 4;
         constexpr int selected_card_lift_y = -4;
+        constexpr int dealing_card_lift_frames = 3;
+        constexpr int deal_animation_cards = 28;
 
         constexpr int panel_tile_size = 16;
         constexpr int panel_tile_half = panel_tile_size / 2;
@@ -78,6 +80,26 @@ namespace solitaire
             }
             return depth;
         }
+
+        constexpr void deal_target_for_step(int step, int& column, int& row)
+        {
+            int remaining = step;
+
+            for(row = 0; row < 7; ++row)
+            {
+                const int row_cards = 7 - row;
+                if(remaining < row_cards)
+                {
+                    column = row + remaining;
+                    return;
+                }
+
+                remaining -= row_cards;
+            }
+
+            column = 6;
+            row = 6;
+        }
     }
 
     game_renderer::game_renderer() :
@@ -98,15 +120,35 @@ namespace solitaire
     }
 
     void game_renderer::render(const klondike_game& game, const table_selection& selection, int elapsed_ticks,
-                               int moves_count)
+                               int moves_count, bool show_press_start_prompt, bool show_deal_animation,
+                               int deal_animation_frame, unsigned animation_frame)
     {
         _text_sprites.clear();
         _card_sprites.clear();
 
         bn::string<48> line = _time_moves_text(elapsed_ticks, moves_count);
-        line += "  SEL ";
-        line += selection.label();
+        if(! show_press_start_prompt && ! show_deal_animation)
+        {
+            line += "  SEL ";
+            line += selection.label();
+        }
         _text_generator.generate(hud_x, hud_y, line, _text_sprites);
+
+        if(show_press_start_prompt)
+        {
+            _slot_highlight_bg.set_visible(false);
+            _waste_highlight_bg.set_visible(false);
+            _render_press_start_prompt(animation_frame);
+            return;
+        }
+
+        if(show_deal_animation)
+        {
+            _slot_highlight_bg.set_visible(false);
+            _waste_highlight_bg.set_visible(false);
+            _render_deal_animation(game, deal_animation_frame);
+            return;
+        }
 
         const table_selection::highlight_state highlight = selection.highlight();
         _update_selection_highlight(highlight.x, highlight.y, highlight.use_waste_style);
@@ -117,6 +159,70 @@ namespace solitaire
         _render_tableau(game, selection, lift_selected_card, top_card);
         _render_held_cards(game);
         _render_status_message(game);
+    }
+
+    void game_renderer::_render_press_start_prompt(unsigned animation_frame)
+    {
+        const int bob_offset = ((animation_frame / 24) % 2) ? -1 : 1;
+        const bool show_indicator = ((animation_frame / 40) % 2) == 0;
+        constexpr int base_x = -92;
+        const int y = 28 + bob_offset;
+
+        _text_generator.set_left_alignment();
+        _text_generator.generate(base_x, y, "PRESS START TO DEAL", _text_sprites);
+        if(show_indicator)
+        {
+            _text_generator.generate(base_x + 168, y, ">>", _text_sprites);
+        }
+    }
+
+    void game_renderer::_render_deal_animation(const klondike_game& game, int deal_animation_frame)
+    {
+        int dealt_cards = deal_animation_frame / dealing_card_lift_frames;
+        if(dealt_cards > deal_animation_cards)
+        {
+            dealt_cards = deal_animation_cards;
+        }
+        const int moving_step = dealt_cards;
+        const int step_frame = deal_animation_frame % dealing_card_lift_frames;
+
+        for(int step = 0; step < dealt_cards; ++step)
+        {
+            int column = 0;
+            int row = 0;
+            deal_target_for_step(step, column, row);
+
+            const int x = table_layout::tableau_base_x + (column * table_layout::pile_x_step);
+            const int y = table_layout::tableau_base_y + (row * tableau_face_down_step);
+            if(row == column)
+            {
+                card face_up_card;
+                if(game.tableau_face_up_card(column, 0, face_up_card))
+                {
+                    _draw_card_sprite(face_up_card, x, y);
+                }
+            }
+            else
+            {
+                _draw_card_back_sprite(x, y);
+            }
+        }
+
+        if(moving_step < deal_animation_cards)
+        {
+            int column = 0;
+            int row = 0;
+            deal_target_for_step(moving_step, column, row);
+
+            const int source_x = table_layout::stock_x;
+            const int source_y = table_layout::top_row_y;
+            const int target_x = table_layout::tableau_base_x + (column * table_layout::pile_x_step);
+            const int target_y = table_layout::tableau_base_y + (row * tableau_face_down_step);
+
+            const int x = source_x + ((target_x - source_x) * step_frame) / dealing_card_lift_frames;
+            const int y = source_y + ((target_y - source_y) * step_frame) / dealing_card_lift_frames;
+            _draw_card_back_sprite(x, y);
+        }
     }
 
     void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,

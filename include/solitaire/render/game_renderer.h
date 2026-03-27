@@ -17,7 +17,9 @@ namespace solitaire
     public:
         game_renderer();
 
-        void render(const klondike_game& game, const table_selection& selection, int elapsed_ticks, int moves_count);
+        void render(const klondike_game& game, const table_selection& selection, int elapsed_ticks, int moves_count,
+                    bool show_press_start_prompt, bool show_deal_animation, int deal_animation_frame,
+                    unsigned animation_frame);
 
     private:
         void _render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
@@ -26,6 +28,8 @@ namespace solitaire
                              card& top_card);
         void _render_held_cards(const klondike_game& game);
         void _render_status_message(const klondike_game& game);
+        void _render_press_start_prompt(unsigned animation_frame);
+        void _render_deal_animation(const klondike_game& game, int deal_animation_frame);
 
         void _draw_held_cards_panel(int held_cards_count);
         void _draw_panel_tile_pair(int x, int top_y, int bottom_y, int top_graphics_index, int bottom_graphics_index);
