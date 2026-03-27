@@ -3,13 +3,18 @@
 #include "bn_core.h"
 #include "bn_keypad.h"
 
+#include "solitaire/core/animation_timing.h"
+
 namespace solitaire
 {
     namespace
     {
-        constexpr int deal_animation_frames_per_card = 3;
-        constexpr int deal_animation_cards = 28;
+        constexpr int deal_animation_frames_per_card = animation_timing::deal_frames_per_card;
+        constexpr int deal_animation_cards = animation_timing::deal_cards;
         constexpr int deal_animation_total_frames = deal_animation_frames_per_card * deal_animation_cards;
+        constexpr int cancel_animation_stagger_frames = animation_timing::cancel_stagger_frames;
+        constexpr int cancel_animation_travel_frames = animation_timing::cancel_travel_frames;
+        constexpr int cancel_max_animated_cards = 80;
 
         // Disabled by default to keep deal start instant.
         constexpr bool enable_winnability_filter = false;
@@ -70,16 +75,33 @@ namespace solitaire
                 break;
             }
 
+            case run_phase::canceling:
+            {
+                ++_deal_animation_frame;
+                _audio.on_deal_animation_frame(_deal_animation_frame, cancel_animation_stagger_frames,
+                                               _cancel_animation_cards);
+                if(_deal_animation_frame >= _cancel_animation_total_frames)
+                {
+                    _phase = run_phase::awaiting_deal;
+                    _deal_animation_frame = 0;
+                    _cancel_animation_cards = 0;
+                    _cancel_animation_total_frames = 0;
+                }
+                break;
+            }
+
             default:
                 break;
         }
 
         const bool show_press_start_prompt = _phase == run_phase::awaiting_deal;
         const bool show_deal_animation = _phase == run_phase::dealing;
+        const bool show_cancel_animation = _phase == run_phase::canceling;
         const bn::string<48>* hint_text = _hint_overlay.text();
         const game_renderer::hint_highlight hint_cells = _hint_overlay.highlight();
         _renderer.render(_game, _selection, _elapsed_ticks, _moves_count, show_press_start_prompt,
-                         show_deal_animation, _deal_animation_frame, _runtime_frames, hint_text,
+                         show_deal_animation, _deal_animation_frame, show_cancel_animation,
+                         _deal_animation_frame, _runtime_frames, hint_text,
                          hint_cells.has_move ? &hint_cells : nullptr);
     }
 
@@ -148,6 +170,44 @@ namespace solitaire
         _audio.on_selection_changed();
     }
 
+    int game_app::_cancel_animation_cards_count() const
+    {
+        int count = 0;
+
+        if(_game.stock_size() > 0)
+        {
+            ++count;
+        }
+
+        int waste_preview = _game.waste_size();
+        if(waste_preview > 3)
+        {
+            waste_preview = 3;
+        }
+        count += waste_preview;
+
+        for(int foundation_index = 0; foundation_index < 4; ++foundation_index)
+        {
+            if(_game.foundation_size(foundation_index) > 0)
+            {
+                ++count;
+            }
+        }
+
+        for(int tableau_index = 0; tableau_index < 7; ++tableau_index)
+        {
+            count += _game.tableau_face_down_size(tableau_index);
+            count += _game.tableau_face_up_size(tableau_index);
+        }
+
+        if(count > cancel_max_animated_cards)
+        {
+            count = cancel_max_animated_cards;
+        }
+
+        return count;
+    }
+
     void game_app::_update_input()
     {
         const int previous_selected_index = _selection.selected_index();
@@ -176,8 +236,14 @@ namespace solitaire
         if(bn::keypad::start_pressed())
         {
             _game.cancel_held();
-            _phase = run_phase::awaiting_deal;
-            _audio.on_return_to_prompt();
+            _phase = run_phase::canceling;
+            _deal_animation_frame = 0;
+            _cancel_animation_cards = _cancel_animation_cards_count();
+            _cancel_animation_total_frames =
+                    (_cancel_animation_cards * cancel_animation_stagger_frames) +
+                    cancel_animation_travel_frames;
+            _hint_overlay.clear();
+            _audio.on_deal_started();
             return;
         }
 
@@ -202,7 +268,6 @@ namespace solitaire
 
     unsigned game_app::_auto_seed_entropy() const
     {
-        // Keeps blockudoku's cycle-based source and mixes in runtime progression.
         return unsigned(bn::core::current_cpu_ticks()) ^
                (unsigned(_entropy_timer.elapsed_ticks()) << 8) ^
                (_runtime_frames * 0x9E3779B9u) ^

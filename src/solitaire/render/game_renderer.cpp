@@ -11,6 +11,7 @@
 
 #include "bn_sprite_palette_items_deck_shared_palette.h"
 #include "common_variable_8x16_sprite_font.h"
+#include "solitaire/core/animation_timing.h"
 #include "solitaire/core/card_sprite_registry.h"
 #include "solitaire/render/held_panel_layout.h"
 #include "solitaire/core/table_layout.h"
@@ -39,14 +40,16 @@ namespace solitaire
 
         constexpr int selected_card_lift_x = 4;
         constexpr int selected_card_lift_y = -4;
-        constexpr int dealing_card_lift_frames = 3;
-        constexpr int deal_animation_cards = 28;
+        constexpr int deal_animation_frames_per_card = animation_timing::deal_frames_per_card;
+        constexpr int deal_animation_cards = animation_timing::deal_cards;
         constexpr int prompt_bob_period_frames = 24;
         constexpr int prompt_blink_period_frames = 40;
         constexpr int prompt_base_x = -92;
         constexpr int prompt_base_y = 28;
         constexpr int prompt_indicator_offset_x = 168;
         constexpr int waste_hint_x_offset = 8;
+        constexpr int cancel_stagger_frames = animation_timing::cancel_stagger_frames;
+        constexpr int cancel_travel_frames = animation_timing::cancel_travel_frames;
 
         constexpr int panel_tile_size = 16;
         constexpr int panel_tile_half = panel_tile_size / 2;
@@ -113,6 +116,20 @@ namespace solitaire
             row = 6;
         }
 
+        [[nodiscard]] constexpr int ease_out_quad_256(int t256)
+        {
+            if(t256 <= 0)
+            {
+                return 0;
+            }
+            if(t256 >= 256)
+            {
+                return 256;
+            }
+
+            return ((512 * t256) - (t256 * t256)) >> 8;
+        }
+
         [[nodiscard]] table_selection::highlight_state highlight_for_pile(const pile_ref& pile)
         {
             table_selection::highlight_state state;
@@ -148,6 +165,69 @@ namespace solitaire
 
             return state;
         }
+
+        struct cancel_anim_card
+        {
+            bool is_face_up = false;
+            card value = {};
+            int x = 0;
+            int y = 0;
+        };
+
+        void append_cancel_top_row_cards(const klondike_game& game, bn::vector<cancel_anim_card, 80>& out_cards)
+        {
+            if(game.stock_size() > 0)
+            {
+                out_cards.push_back({ false, {}, table_layout::stock_x, table_layout::top_row_y });
+            }
+
+            card top_card;
+            for(int waste_offset = waste_preview_count - 1; waste_offset >= 0; --waste_offset)
+            {
+                if(game.waste_card_from_top(waste_offset, top_card))
+                {
+                    const int x = table_layout::waste_x + (((waste_preview_count - 1) - waste_offset) * waste_preview_step);
+                    out_cards.push_back({ true, top_card, x, table_layout::top_row_y });
+                }
+            }
+
+            for(int foundation_index = 0; foundation_index < 4; ++foundation_index)
+            {
+                if(game.foundation_top(foundation_index, top_card))
+                {
+                    const int x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
+                    out_cards.push_back({ true, top_card, x, table_layout::top_row_y });
+                }
+            }
+        }
+
+        void append_cancel_tableau_cards(const klondike_game& game, bn::vector<cancel_anim_card, 80>& out_cards)
+        {
+            card value;
+            for(int tableau_index = 0; tableau_index < 7; ++tableau_index)
+            {
+                const int x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
+                const int face_down_count = game.tableau_face_down_size(tableau_index);
+                const int face_up_count = game.tableau_face_up_size(tableau_index);
+                const int face_up_step = tableau_face_up_step_for_count(face_up_count);
+
+                for(int down_index = 0; down_index < face_down_count; ++down_index)
+                {
+                    const int y = table_layout::tableau_base_y + (down_index * tableau_face_down_step);
+                    out_cards.push_back({ false, {}, x, y });
+                }
+
+                for(int up_index = 0; up_index < face_up_count; ++up_index)
+                {
+                    if(game.tableau_face_up_card(tableau_index, up_index, value))
+                    {
+                        const int y = table_layout::tableau_base_y + (face_down_count * tableau_face_down_step) +
+                                      (up_index * face_up_step);
+                        out_cards.push_back({ true, value, x, y });
+                    }
+                }
+            }
+        }
     }
 
     game_renderer::game_renderer() :
@@ -169,8 +249,8 @@ namespace solitaire
 
     void game_renderer::render(const klondike_game& game, const table_selection& selection, int elapsed_ticks,
                                int moves_count, bool show_press_start_prompt, bool show_deal_animation,
-                               int deal_animation_frame, unsigned animation_frame, const bn::string<48>* hint_text,
-                               const hint_highlight* hint_cells)
+                               int deal_animation_frame, bool show_cancel_animation, int cancel_animation_frame,
+                               unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells)
     {
         _text_sprites.clear();
         _card_sprites.clear();
@@ -201,7 +281,15 @@ namespace solitaire
             return;
         }
 
-        if(hint_cells && hint_cells->has_move)
+        if(show_cancel_animation)
+        {
+            _slot_highlight_bg.set_visible(false);
+            _waste_highlight_bg.set_visible(false);
+            _update_hint_highlights(nullptr);
+            _render_cancel_animation(game, cancel_animation_frame);
+            return;
+        }
+        else if(hint_cells && hint_cells->has_move)
         {
             _update_hint_highlights(hint_cells);
         }
@@ -220,6 +308,82 @@ namespace solitaire
         _render_status_message(game, hint_text);
     }
 
+    void game_renderer::_render_cancel_animation(const klondike_game& game, int cancel_animation_frame)
+    {
+        bn::vector<cancel_anim_card, 80> cards;
+        append_cancel_top_row_cards(game, cards);
+        append_cancel_tableau_cards(game, cards);
+        if(cards.empty())
+        {
+            return;
+        }
+
+        // Draw a sink target so the sweep has a clear endpoint.
+        _draw_card_back_sprite(table_layout::stock_x, table_layout::top_row_y);
+
+        int completed_cards = cancel_animation_frame / cancel_stagger_frames;
+        if(completed_cards > cards.size())
+        {
+            completed_cards = cards.size();
+        }
+
+        // Draw non-moving cards first.
+        for(int index = 0; index < cards.size(); ++index)
+        {
+            const int order = cards.size() - 1 - index;
+            const int start_frame = order * cancel_stagger_frames;
+            if(cancel_animation_frame >= start_frame)
+            {
+                continue;
+            }
+
+            const cancel_anim_card& card_data = cards[index];
+            if(card_data.is_face_up)
+            {
+                _draw_card_sprite(card_data.value, card_data.x, card_data.y);
+            }
+            else
+            {
+                _draw_card_back_sprite(card_data.x, card_data.y);
+            }
+        }
+
+        // Draw in-flight cards last so they appear on top.
+        for(int index = 0; index < cards.size(); ++index)
+        {
+            const int order = cards.size() - 1 - index;
+            const int start_frame = order * cancel_stagger_frames;
+            const int local_frame = cancel_animation_frame - start_frame;
+            if(local_frame < 0 || local_frame >= cancel_travel_frames)
+            {
+                continue;
+            }
+
+            int progress = (local_frame * 256) / cancel_travel_frames;
+            if(progress > 256)
+            {
+                progress = 256;
+            }
+
+            // Ease-out quadratic in fixed 8.8 domain.
+            const int eased = ((512 * progress) - (progress * progress)) >> 8;
+
+            const cancel_anim_card& moving_card = cards[index];
+            const int target_x = table_layout::stock_x;
+            const int target_y = table_layout::top_row_y;
+            const int x = moving_card.x + ((target_x - moving_card.x) * eased) / 256;
+            const int y = moving_card.y + ((target_y - moving_card.y) * eased) / 256;
+            if(moving_card.is_face_up)
+            {
+                _draw_card_sprite(moving_card.value, x, y);
+            }
+            else
+            {
+                _draw_card_back_sprite(x, y);
+            }
+        }
+    }
+
     void game_renderer::_render_press_start_prompt(unsigned animation_frame)
     {
         const int bob_offset = ((animation_frame / prompt_bob_period_frames) % 2) ? -1 : 1;
@@ -236,13 +400,20 @@ namespace solitaire
 
     void game_renderer::_render_deal_animation(const klondike_game& game, int deal_animation_frame)
     {
-        int dealt_cards = deal_animation_frame / dealing_card_lift_frames;
+        int dealt_cards = deal_animation_frame / deal_animation_frames_per_card;
         if(dealt_cards > deal_animation_cards)
         {
             dealt_cards = deal_animation_cards;
         }
         const int moving_step = dealt_cards;
-        const int step_frame = deal_animation_frame % dealing_card_lift_frames;
+        const int step_frame = deal_animation_frame % deal_animation_frames_per_card;
+        const int step_t256 = (step_frame * 256) / deal_animation_frames_per_card;
+        const int eased_t256 = ease_out_quad_256(step_t256);
+
+        if(dealt_cards < deal_animation_cards)
+        {
+            _draw_card_back_sprite(table_layout::stock_x, table_layout::top_row_y);
+        }
 
         for(int step = 0; step < dealt_cards; ++step)
         {
@@ -276,9 +447,12 @@ namespace solitaire
             const int source_y = table_layout::top_row_y;
             const int target_x = table_layout::tableau_base_x + (column * table_layout::pile_x_step);
             const int target_y = table_layout::tableau_base_y + (row * tableau_face_down_step);
+            const int arc_height = 4;
 
-            const int x = source_x + ((target_x - source_x) * step_frame) / dealing_card_lift_frames;
-            const int y = source_y + ((target_y - source_y) * step_frame) / dealing_card_lift_frames;
+            const int x = source_x + ((target_x - source_x) * eased_t256) / 256;
+            int y = source_y + ((target_y - source_y) * eased_t256) / 256;
+            const int arch_t = step_t256 <= 128 ? step_t256 : (256 - step_t256);
+            y -= (arch_t * arc_height) / 128;
             _draw_card_back_sprite(x, y);
         }
     }
@@ -288,14 +462,14 @@ namespace solitaire
     {
         if(game.stock_size() > 0)
         {
-            int x = table_layout::stock_x;
-            int y = table_layout::top_row_y;
+            int base_x = table_layout::stock_x;
+            int base_y = table_layout::top_row_y;
             if(lift_selected_card && selection.is_stock_selected())
             {
-                x += selected_card_lift_x;
-                y += selected_card_lift_y;
+                base_x += selected_card_lift_x;
+                base_y += selected_card_lift_y;
             }
-            _draw_card_back_sprite(x, y);
+            _draw_card_back_sprite(base_x, base_y);
         }
 
         for(int waste_offset = waste_preview_count - 1; waste_offset >= 0; --waste_offset)
@@ -502,7 +676,6 @@ namespace solitaire
         const table_selection::highlight_state from = highlight_for_pile(hint_cells->from);
         const table_selection::highlight_state to = highlight_for_pile(hint_cells->to);
 
-        // Keep the regular selection highlight for the source hint cell.
         _update_selection_highlight(from.x, from.y, from.use_waste_style);
         _draw_hint_cell_sprite(from.x, from.y, from.use_waste_style);
         if(from.x != to.x || from.y != to.y || from.use_waste_style != to.use_waste_style)

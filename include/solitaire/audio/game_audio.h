@@ -12,7 +12,6 @@ namespace solitaire
         void on_deal_started();
         void on_deal_animation_frame(int deal_animation_frame, int frames_per_card, int total_cards);
         void on_selection_changed();
-        void on_return_to_prompt();
         void on_cancel_pressed(bool had_held_cards);
         void on_place_attempt(bool success);
         void on_draw_from_stock(bool success);

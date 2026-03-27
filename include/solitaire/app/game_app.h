@@ -18,6 +18,7 @@ namespace solitaire
     {
         awaiting_deal,
         dealing,
+        canceling,
         playing
     };
 
@@ -34,6 +35,7 @@ namespace solitaire
         void _deal_once();
         void _deal_with_filter();
         void _reset_round_state_for_new_deal();
+        [[nodiscard]] int _cancel_animation_cards_count() const;
         void _update_input();
         void _show_hint();
         void _handle_primary_action();
@@ -50,6 +52,8 @@ namespace solitaire
         int _moves_count = 0;
         run_phase _phase = run_phase::awaiting_deal;
         int _deal_animation_frame = 0;
+        int _cancel_animation_cards = 0;
+        int _cancel_animation_total_frames = 0;
         unsigned _runtime_frames = 0;
         klondike_hint_service _hint_service;
         hint_overlay _hint_overlay;

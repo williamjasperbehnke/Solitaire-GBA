@@ -62,11 +62,6 @@ namespace solitaire
         }
     }
 
-    void game_audio::on_return_to_prompt()
-    {
-        bn::sound_items::card_place.play(place_volume);
-    }
-
     void game_audio::on_cancel_pressed(bool had_held_cards)
     {
         if(had_held_cards)
