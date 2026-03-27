@@ -19,7 +19,6 @@ namespace solitaire
         static void _fill_stock_with_new_deck(stock_pile& stock);
         static void _shuffle_stock(bn::random& random, stock_pile& stock);
         static void _deal_tableau(stock_pile& stock, tableau_piles& tableaus);
-        static void _apply_render_stress_test(stock_pile& stock, tableau_piles& tableaus);
     };
 
 }
