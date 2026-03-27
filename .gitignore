@@ -1,0 +1,7 @@
+/build/
+*.elf
+*.gba
+*.map
+*.sav
+.DS_Store
+third_party/
