@@ -10,6 +10,7 @@
 #include "solitaire/core/pile_ref.h"
 #include "solitaire/game/klondike_game.h"
 #include "solitaire/input/table_selection.h"
+#include "solitaire/render/table_animation_renderer.h"
 
 namespace solitaire
 {
@@ -38,12 +39,8 @@ namespace solitaire
         void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
                              card& top_card);
         void _render_held_cards(const klondike_game& game);
-        void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text,
-                                    bool show_victory_animation, unsigned animation_frame);
+        void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text);
         void _render_press_start_prompt(unsigned animation_frame);
-        void _render_deal_animation(const klondike_game& game, int deal_animation_frame);
-        void _render_cancel_animation(const klondike_game& game, int cancel_animation_frame);
-        void _render_victory_animation(const klondike_game& game, int victory_animation_frame);
 
         void _draw_held_cards_panel(int held_cards_count);
         void _draw_panel_tile_pair(int x, int top_y, int bottom_y, int top_graphics_index, int bottom_graphics_index);
@@ -59,6 +56,7 @@ namespace solitaire
         bn::regular_bg_ptr _table_bg;
         bn::regular_bg_ptr _slot_highlight_bg;
         bn::regular_bg_ptr _waste_highlight_bg;
+        table_animation_renderer _animation_renderer;
 
         bn::sprite_text_generator _text_generator;
         bn::vector<bn::sprite_ptr, 256> _text_sprites;

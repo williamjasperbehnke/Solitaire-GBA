@@ -5,21 +5,25 @@
 #include "bn_regular_bg_items_waste_highlight_bg.h"
 #include "bn_sprite_items_hint_slot_cell_highlight.h"
 #include "bn_sprite_items_hint_waste_cell_highlight.h"
+#include "bn_sprite_palette_items_deck_shared_palette.h"
 #include "bn_sprite_tiles_items_held_panel_parts.h"
 #include "bn_string.h"
 #include "bn_timers.h"
 
-#include "bn_sprite_palette_items_deck_shared_palette.h"
 #include "common_variable_8x16_sprite_font.h"
-#include "solitaire/core/animation_timing.h"
 #include "solitaire/core/card_sprite_registry.h"
-#include "solitaire/render/held_panel_layout.h"
 #include "solitaire/core/table_layout.h"
+#include "solitaire/render/held_panel_layout.h"
+#include "solitaire/render/render_constants.h"
 
 namespace solitaire
 {
     namespace
     {
+        constexpr int waste_preview_count = render_constants::waste_preview_count;
+        constexpr int waste_preview_step = render_constants::waste_preview_step;
+        constexpr int tableau_face_down_step = render_constants::tableau_face_down_step;
+
         constexpr int held_panel_left_top_graphics_index = 0;
         constexpr int held_panel_middle_top_graphics_index = 1;
         constexpr int held_panel_right_top_graphics_index = 2;
@@ -34,22 +38,14 @@ namespace solitaire
         constexpr int held_cards_y = 52;
         constexpr int held_cards_step = 8;
 
-        constexpr int waste_preview_count = 3;
-        constexpr int waste_preview_step = 8;
-        constexpr int tableau_face_down_step = 4;
-
         constexpr int selected_card_lift_x = 4;
         constexpr int selected_card_lift_y = -4;
-        constexpr int deal_animation_frames_per_card = animation_timing::deal_frames_per_card;
-        constexpr int deal_animation_cards = animation_timing::deal_cards;
         constexpr int prompt_bob_period_frames = 24;
         constexpr int prompt_blink_period_frames = 40;
         constexpr int prompt_base_x = -92;
         constexpr int prompt_base_y = 28;
         constexpr int prompt_indicator_offset_x = 168;
         constexpr int waste_hint_x_offset = 8;
-        constexpr int cancel_stagger_frames = animation_timing::cancel_stagger_frames;
-        constexpr int cancel_travel_frames = animation_timing::cancel_travel_frames;
 
         constexpr int panel_tile_size = 16;
         constexpr int panel_tile_half = panel_tile_size / 2;
@@ -96,40 +92,6 @@ namespace solitaire
             return depth;
         }
 
-        constexpr void deal_target_for_step(int step, int& column, int& row)
-        {
-            int remaining = step;
-
-            for(row = 0; row < 7; ++row)
-            {
-                const int row_cards = 7 - row;
-                if(remaining < row_cards)
-                {
-                    column = row + remaining;
-                    return;
-                }
-
-                remaining -= row_cards;
-            }
-
-            column = 6;
-            row = 6;
-        }
-
-        [[nodiscard]] constexpr int ease_out_quad_256(int t256)
-        {
-            if(t256 <= 0)
-            {
-                return 0;
-            }
-            if(t256 >= 256)
-            {
-                return 256;
-            }
-
-            return ((512 * t256) - (t256 * t256)) >> 8;
-        }
-
         [[nodiscard]] constexpr int triangle_wave_offset(unsigned animation_frame, int phase)
         {
             const int period = 32;
@@ -139,7 +101,6 @@ namespace solitaire
                 step = period - 1 - step;
             }
 
-            // Range roughly [-2, +1]
             return (step / 4) - 2;
         }
 
@@ -177,69 +138,6 @@ namespace solitaire
             }
 
             return state;
-        }
-
-        struct cancel_anim_card
-        {
-            bool is_face_up = false;
-            card value = {};
-            int x = 0;
-            int y = 0;
-        };
-
-        void append_cancel_top_row_cards(const klondike_game& game, bn::vector<cancel_anim_card, 80>& out_cards)
-        {
-            if(game.stock_size() > 0)
-            {
-                out_cards.push_back({ false, {}, table_layout::stock_x, table_layout::top_row_y });
-            }
-
-            card top_card;
-            for(int waste_offset = waste_preview_count - 1; waste_offset >= 0; --waste_offset)
-            {
-                if(game.waste_card_from_top(waste_offset, top_card))
-                {
-                    const int x = table_layout::waste_x + (((waste_preview_count - 1) - waste_offset) * waste_preview_step);
-                    out_cards.push_back({ true, top_card, x, table_layout::top_row_y });
-                }
-            }
-
-            for(int foundation_index = 0; foundation_index < 4; ++foundation_index)
-            {
-                if(game.foundation_top(foundation_index, top_card))
-                {
-                    const int x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
-                    out_cards.push_back({ true, top_card, x, table_layout::top_row_y });
-                }
-            }
-        }
-
-        void append_cancel_tableau_cards(const klondike_game& game, bn::vector<cancel_anim_card, 80>& out_cards)
-        {
-            card value;
-            for(int tableau_index = 0; tableau_index < 7; ++tableau_index)
-            {
-                const int x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
-                const int face_down_count = game.tableau_face_down_size(tableau_index);
-                const int face_up_count = game.tableau_face_up_size(tableau_index);
-                const int face_up_step = tableau_face_up_step_for_count(face_up_count);
-
-                for(int down_index = 0; down_index < face_down_count; ++down_index)
-                {
-                    const int y = table_layout::tableau_base_y + (down_index * tableau_face_down_step);
-                    out_cards.push_back({ false, {}, x, y });
-                }
-
-                for(int up_index = 0; up_index < face_up_count; ++up_index)
-                {
-                    if(game.tableau_face_up_card(tableau_index, up_index, value))
-                    {
-                        const int y = table_layout::tableau_base_y + (face_down_count * tableau_face_down_step) +
-                                      (up_index * face_up_step);
-                        out_cards.push_back({ true, value, x, y });
-                    }
-                }
-            }
         }
     }
 
@@ -291,7 +189,7 @@ namespace solitaire
             _slot_highlight_bg.set_visible(false);
             _waste_highlight_bg.set_visible(false);
             _update_hint_highlights(nullptr);
-            _render_deal_animation(game, deal_animation_frame);
+            _animation_renderer.render_deal(game, deal_animation_frame, _card_sprites);
             return;
         }
 
@@ -300,18 +198,26 @@ namespace solitaire
             _slot_highlight_bg.set_visible(false);
             _waste_highlight_bg.set_visible(false);
             _update_hint_highlights(nullptr);
-            _render_cancel_animation(game, cancel_animation_frame);
+            _animation_renderer.render_cancel(game, cancel_animation_frame, _card_sprites);
             return;
         }
+
         if(show_victory_animation)
         {
             _slot_highlight_bg.set_visible(false);
             _waste_highlight_bg.set_visible(false);
             _update_hint_highlights(nullptr);
-            _render_victory_animation(game, victory_animation_frame);
+            _animation_renderer.render_victory(game, victory_animation_frame, _card_sprites);
+            if(((victory_animation_frame / 8) % 2) == 0)
+            {
+                _text_generator.set_center_alignment();
+                _text_generator.generate(0, 0, "VICTORY!", _text_sprites);
+                _text_generator.set_left_alignment();
+            }
             return;
         }
-        else if(hint_cells && hint_cells->has_move)
+
+        if(hint_cells && hint_cells->has_move)
         {
             _update_hint_highlights(hint_cells);
         }
@@ -328,106 +234,7 @@ namespace solitaire
         _render_top_row(game, selection, lift_selected_card, show_won_effects, animation_frame, top_card);
         _render_tableau(game, selection, lift_selected_card, top_card);
         _render_held_cards(game);
-        _render_status_message(game, hint_text, show_won_effects, animation_frame);
-    }
-
-    void game_renderer::_render_victory_animation(const klondike_game& game, int victory_animation_frame)
-    {
-        bn::vector<cancel_anim_card, 80> cards;
-        append_cancel_top_row_cards(game, cards);
-        append_cancel_tableau_cards(game, cards);
-
-        for(int index = 0; index < cards.size(); ++index)
-        {
-            const cancel_anim_card& card_data = cards[index];
-            const int x = ((index * 29 + victory_animation_frame * (3 + (index % 3))) % 240) - 120;
-            const int y = ((index * 47 + victory_animation_frame * (2 + (index % 4))) % 160) - 80;
-            if(card_data.is_face_up)
-            {
-                _draw_card_sprite(card_data.value, x, y);
-            }
-            else
-            {
-                _draw_card_back_sprite(x, y);
-            }
-        }
-
-        if(((victory_animation_frame / 8) % 2) == 0)
-        {
-            _text_generator.set_center_alignment();
-            _text_generator.generate(0, 0, "VICTORY!", _text_sprites);
-            _text_generator.set_left_alignment();
-        }
-    }
-
-    void game_renderer::_render_cancel_animation(const klondike_game& game, int cancel_animation_frame)
-    {
-        bn::vector<cancel_anim_card, 80> cards;
-        append_cancel_top_row_cards(game, cards);
-        append_cancel_tableau_cards(game, cards);
-        if(cards.empty())
-        {
-            return;
-        }
-
-        // Draw a sink target so the sweep has a clear endpoint.
-        _draw_card_back_sprite(table_layout::stock_x, table_layout::top_row_y);
-
-        // Draw non-moving cards first.
-        for(int index = 0; index < cards.size(); ++index)
-        {
-            const int order = cards.size() - 1 - index;
-            const int start_frame = order * cancel_stagger_frames;
-            if(cancel_animation_frame >= start_frame)
-            {
-                continue;
-            }
-
-            const cancel_anim_card& card_data = cards[index];
-            if(card_data.is_face_up)
-            {
-                _draw_card_sprite(card_data.value, card_data.x, card_data.y);
-            }
-            else
-            {
-                _draw_card_back_sprite(card_data.x, card_data.y);
-            }
-        }
-
-        // Draw in-flight cards last so they appear on top.
-        for(int index = 0; index < cards.size(); ++index)
-        {
-            const int order = cards.size() - 1 - index;
-            const int start_frame = order * cancel_stagger_frames;
-            const int local_frame = cancel_animation_frame - start_frame;
-            if(local_frame < 0 || local_frame >= cancel_travel_frames)
-            {
-                continue;
-            }
-
-            int progress = (local_frame * 256) / cancel_travel_frames;
-            if(progress > 256)
-            {
-                progress = 256;
-            }
-
-            // Ease-out quadratic in fixed 8.8 domain.
-            const int eased = ((512 * progress) - (progress * progress)) >> 8;
-
-            const cancel_anim_card& moving_card = cards[index];
-            const int target_x = table_layout::stock_x;
-            const int target_y = table_layout::top_row_y;
-            const int x = moving_card.x + ((target_x - moving_card.x) * eased) / 256;
-            const int y = moving_card.y + ((target_y - moving_card.y) * eased) / 256;
-            if(moving_card.is_face_up)
-            {
-                _draw_card_sprite(moving_card.value, x, y);
-            }
-            else
-            {
-                _draw_card_back_sprite(x, y);
-            }
-        }
+        _render_status_message(game, hint_text);
     }
 
     void game_renderer::_render_press_start_prompt(unsigned animation_frame)
@@ -444,67 +251,9 @@ namespace solitaire
         }
     }
 
-    void game_renderer::_render_deal_animation(const klondike_game& game, int deal_animation_frame)
-    {
-        int dealt_cards = deal_animation_frame / deal_animation_frames_per_card;
-        if(dealt_cards > deal_animation_cards)
-        {
-            dealt_cards = deal_animation_cards;
-        }
-        const int moving_step = dealt_cards;
-        const int step_frame = deal_animation_frame % deal_animation_frames_per_card;
-        const int step_t256 = (step_frame * 256) / deal_animation_frames_per_card;
-        const int eased_t256 = ease_out_quad_256(step_t256);
-
-        if(dealt_cards < deal_animation_cards)
-        {
-            _draw_card_back_sprite(table_layout::stock_x, table_layout::top_row_y);
-        }
-
-        for(int step = 0; step < dealt_cards; ++step)
-        {
-            int column = 0;
-            int row = 0;
-            deal_target_for_step(step, column, row);
-
-            const int x = table_layout::tableau_base_x + (column * table_layout::pile_x_step);
-            const int y = table_layout::tableau_base_y + (row * tableau_face_down_step);
-            if(row == column)
-            {
-                card face_up_card;
-                if(game.tableau_face_up_card(column, 0, face_up_card))
-                {
-                    _draw_card_sprite(face_up_card, x, y);
-                }
-            }
-            else
-            {
-                _draw_card_back_sprite(x, y);
-            }
-        }
-
-        if(moving_step < deal_animation_cards)
-        {
-            int column = 0;
-            int row = 0;
-            deal_target_for_step(moving_step, column, row);
-
-            const int source_x = table_layout::stock_x;
-            const int source_y = table_layout::top_row_y;
-            const int target_x = table_layout::tableau_base_x + (column * table_layout::pile_x_step);
-            const int target_y = table_layout::tableau_base_y + (row * tableau_face_down_step);
-            const int arc_height = 4;
-
-            const int x = source_x + ((target_x - source_x) * eased_t256) / 256;
-            int y = source_y + ((target_y - source_y) * eased_t256) / 256;
-            const int arch_t = step_t256 <= 128 ? step_t256 : (256 - step_t256);
-            y -= (arch_t * arc_height) / 128;
-            _draw_card_back_sprite(x, y);
-        }
-    }
-
-    void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                                        bool show_victory_animation, unsigned animation_frame, card& top_card)
+    void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection,
+                                        bool lift_selected_card, bool show_victory_animation,
+                                        unsigned animation_frame, card& top_card)
     {
         if(game.stock_size() > 0)
         {
@@ -555,8 +304,8 @@ namespace solitaire
         }
     }
 
-    void game_renderer::_render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                                        card& top_card)
+    void game_renderer::_render_tableau(const klondike_game& game, const table_selection& selection,
+                                        bool lift_selected_card, card& top_card)
     {
         const int selected_tableau_index = selection.selected_tableau_index();
 
@@ -613,8 +362,7 @@ namespace solitaire
         }
     }
 
-    void game_renderer::_render_status_message(const klondike_game& game, const bn::string<48>* hint_text,
-                                               bool show_victory_animation, unsigned animation_frame)
+    void game_renderer::_render_status_message(const klondike_game& game, const bn::string<48>* hint_text)
     {
         if(hint_text)
         {
@@ -763,5 +511,4 @@ namespace solitaire
         output += bn::to_string<4>(moves_count);
         return output;
     }
-
 }
