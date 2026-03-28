@@ -33,6 +33,7 @@ namespace solitaire
         void set_seed(unsigned seed);
         void reset();
         void setup_debug_one_move_to_win();
+        void setup_debug_tableau_spacing_example();
         [[nodiscard]] bool is_winnable_with_search(int node_budget) const;
         [[nodiscard]] deal_quality classify_deal_with_search(int easy_win_depth_limit, int hard_search_depth_limit,
                                                              int easy_search_node_budget,

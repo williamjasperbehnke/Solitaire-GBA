@@ -388,7 +388,8 @@ namespace solitaire
             const int x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
             const int face_down_count = game.tableau_face_down_size(tableau_index);
             const int face_up_count = game.tableau_face_up_size(tableau_index);
-            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
+            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count,
+                                                                                       face_down_count);
 
             const bool selected_tableau = selected_tableau_index == tableau_index;
             const int selected_depth_from_top = selected_tableau_depth_from_top(

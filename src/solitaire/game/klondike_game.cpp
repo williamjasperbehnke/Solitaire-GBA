@@ -43,6 +43,45 @@ namespace solitaire
         _held_state.reset_for_new_game();
     }
 
+    void klondike_game::setup_debug_tableau_spacing_example()
+    {
+        _stock.clear();
+        _waste.clear();
+        for(auto& foundation : _foundations)
+        {
+            foundation.clear();
+        }
+        for(auto& tableau : _tableaus)
+        {
+            tableau.face_down.clear();
+            tableau.face_up.clear();
+        }
+
+        auto& tableau = _tableaus[0];
+        tableau.face_down.push_back(card { 6, suit::clubs });
+        tableau.face_down.push_back(card { 5, suit::clubs });
+        tableau.face_down.push_back(card { 4, suit::clubs });
+        tableau.face_down.push_back(card { 3, suit::clubs });
+        tableau.face_down.push_back(card { 2, suit::clubs });
+        tableau.face_down.push_back(card { 1, suit::clubs });
+
+        tableau.face_up.push_back(card { 13, suit::hearts });
+        tableau.face_up.push_back(card { 12, suit::hearts });
+        tableau.face_up.push_back(card { 11, suit::hearts });
+        tableau.face_up.push_back(card { 10, suit::hearts });
+        tableau.face_up.push_back(card { 9, suit::hearts });
+        tableau.face_up.push_back(card { 8, suit::hearts });
+        tableau.face_up.push_back(card { 7, suit::hearts });
+        tableau.face_up.push_back(card { 6, suit::hearts });
+        tableau.face_up.push_back(card { 5, suit::hearts });
+        tableau.face_up.push_back(card { 4, suit::hearts });
+        tableau.face_up.push_back(card { 3, suit::hearts });
+        tableau.face_up.push_back(card { 2, suit::hearts });
+        tableau.face_up.push_back(card { 1, suit::hearts });
+
+        _held_state.reset_for_new_game();
+    }
+
     bool klondike_game::is_winnable_with_search(int node_budget) const
     {
         klondike_winnability_filter filter;

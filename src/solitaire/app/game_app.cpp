@@ -43,6 +43,7 @@ namespace solitaire
 
         // Developer preview mode to quickly verify win flow and animation.
         constexpr bool debug_start_one_move_from_win = false;
+        constexpr bool debug_start_tableau_spacing_example = false;
 
         [[nodiscard]] bool top_card_position_for_selection(const klondike_game& game, const pile_ref& selected,
                                                            int& out_x, int& out_y)
@@ -78,7 +79,8 @@ namespace solitaire
                         return false;
                     }
                     const int face_down_count = game.tableau_face_down_size(selected.index);
-                    const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
+                    const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count,
+                                                                                               face_down_count);
                     out_x = table_layout::tableau_base_x + (selected.index * table_layout::pile_x_step);
                     out_y = table_layout::tableau_base_y + (face_down_count * tableau_face_down_step) +
                             ((face_up_count - 1) * face_up_step);
@@ -100,7 +102,8 @@ namespace solitaire
             }
 
             const int face_down_count = game.tableau_face_down_size(tableau_index);
-            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
+            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count,
+                                                                                       face_down_count);
             out_x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
             out_y = table_layout::tableau_base_y + (face_down_count * tableau_face_down_step) +
                     (face_up_index * face_up_step);
@@ -325,6 +328,11 @@ namespace solitaire
             _game.setup_debug_one_move_to_win();
             _selection.set_selected_pile({ pile_kind::waste, 0 });
         }
+        else if(debug_start_tableau_spacing_example)
+        {
+            _game.setup_debug_tableau_spacing_example();
+            _selection.set_selected_pile({ pile_kind::tableau, 0 });
+        }
 
         _reset_round_state_for_new_deal();
     }
@@ -388,7 +396,8 @@ namespace solitaire
             return 0;
         }
 
-        return render_constants::tableau_face_up_step_for_count(_game.tableau_face_up_size(pile.index));
+        return render_constants::tableau_face_up_step_for_count(_game.tableau_face_up_size(pile.index),
+                                                                _game.tableau_face_down_size(pile.index));
     }
 
     void game_app::_begin_transfer_to_target_pile(const bn::vector<card, 19>& cards, int source_x, int source_y,
@@ -421,7 +430,8 @@ namespace solitaire
         if(source_pile.kind == pile_kind::tableau)
         {
             source_step_y = render_constants::tableau_face_up_step_for_count(
-                    _game.tableau_face_up_size(source_pile.index) + moving_cards.size());
+                    _game.tableau_face_up_size(source_pile.index) + moving_cards.size(),
+                    _game.tableau_face_down_size(source_pile.index));
         }
 
         _begin_card_transfer_animation(moving_cards, source_x, source_y, target_x, target_y, 0, source_step_y,

@@ -11,25 +11,31 @@ namespace solitaire::render_constants
     constexpr int selected_card_lift_x = 4;
     constexpr int selected_card_lift_y = -4;
 
-    [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count)
+    [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count, int face_down_count = 0)
     {
-        if(face_up_count <= 6)
+        if(face_up_count <= 0)
         {
-            return 7;
+            return 1;
         }
-        if(face_up_count <= 10)
+
+        constexpr int tableau_height_limit = 72;
+        constexpr int max_face_up_step = 9;
+        const int available_pixels = tableau_height_limit - (face_down_count * tableau_face_down_step);
+        if(available_pixels <= 0)
         {
-            return 6;
+            return 1;
         }
-        if(face_up_count <= 14)
+
+        const int step = available_pixels / face_up_count;
+        if(step <= 0)
         {
-            return 5;
+            return 1;
         }
-        if(face_up_count <= 18)
+        if(step > max_face_up_step)
         {
-            return 4;
+            return max_face_up_step;
         }
-        return 3;
+        return step;
     }
 }
 
