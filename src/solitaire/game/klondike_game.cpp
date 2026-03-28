@@ -81,6 +81,37 @@ namespace solitaire
         return true;
     }
 
+    bool klondike_game::try_waste_to_foundation(waste_to_foundation_move& out_move)
+    {
+        out_move = {};
+
+        if(_waste.empty())
+        {
+            return false;
+        }
+
+        const card candidate = _waste.back();
+        out_move.had_previous_card = false;
+        for(int index = 0; index < 4; ++index)
+        {
+            if(_rules.can_place_on_foundation(candidate, _foundations[index]))
+            {
+                out_move.had_previous_card = ! _foundations[index].empty();
+                if(out_move.had_previous_card)
+                {
+                    out_move.previous_card = _foundations[index].back();
+                }
+                _waste.pop_back();
+                _foundations[index].push_back(candidate);
+                out_move.foundation_index = index;
+                out_move.moved_card = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     bool klondike_game::try_pick(const pile_ref& from, int tableau_depth_from_top)
     {
         if(_held_state.has_held_card())

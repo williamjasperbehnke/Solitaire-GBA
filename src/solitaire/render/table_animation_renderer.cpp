@@ -27,27 +27,6 @@ namespace solitaire
             int y = 0;
         };
 
-        [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count)
-        {
-            if(face_up_count <= 6)
-            {
-                return 7;
-            }
-            if(face_up_count <= 10)
-            {
-                return 6;
-            }
-            if(face_up_count <= 14)
-            {
-                return 5;
-            }
-            if(face_up_count <= 18)
-            {
-                return 4;
-            }
-            return 3;
-        }
-
         [[nodiscard]] constexpr int ease_out_quad_256(int t256)
         {
             if(t256 <= 0)
@@ -132,7 +111,7 @@ namespace solitaire
                 const int x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
                 const int face_down_count = game.tableau_face_down_size(tableau_index);
                 const int face_up_count = game.tableau_face_up_size(tableau_index);
-                const int face_up_step = tableau_face_up_step_for_count(face_up_count);
+                const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
 
                 for(int down_index = 0; down_index < face_down_count; ++down_index)
                 {
@@ -299,5 +278,40 @@ namespace solitaire
                 draw_back_card(x, y, out_card_sprites);
             }
         }
+    }
+
+    void table_animation_renderer::render_to_foundation(
+            const card& value, int source_x, int source_y, int foundation_index, int animation_frame, int total_frames,
+            bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const
+    {
+        if(total_frames <= 0)
+        {
+            return;
+        }
+
+        int t256 = (animation_frame * 256) / total_frames;
+        if(t256 < 0)
+        {
+            t256 = 0;
+        }
+        else if(t256 > 256)
+        {
+            t256 = 256;
+        }
+
+        const int eased_t256 = ease_out_quad_256(t256);
+        const int target_x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
+        const int target_y = table_layout::top_row_y;
+
+        const int x = source_x + ((target_x - source_x) * eased_t256) / 256;
+        int y = source_y + ((target_y - source_y) * eased_t256) / 256;
+        const int arc_t = t256 <= 128 ? t256 : (256 - t256);
+        y -= (arc_t * 3) / 128;
+
+        bn::sprite_ptr sprite = card_face_item(value).create_sprite(x, y);
+        sprite.set_palette(bn::sprite_palette_items::deck_shared_palette);
+        sprite.set_bg_priority(0);
+        sprite.set_z_order(-2);
+        out_card_sprites.push_back(bn::move(sprite));
     }
 }

@@ -31,6 +31,18 @@ namespace solitaire
         void update();
 
     private:
+        struct foundation_move_animation_state
+        {
+            bool active = false;
+            int frame = 0;
+            int source_x = 0;
+            int source_y = 0;
+            int destination_foundation_index = 0;
+            card moving_card = {};
+            bool has_previous_card = false;
+            card previous_card = {};
+        };
+
         void _update_phase();
         void _render_frame();
         void _update_awaiting_deal_phase();
@@ -49,6 +61,12 @@ namespace solitaire
         void _update_input();
         void _show_hint();
         void _handle_primary_action();
+        void _handle_quick_send_to_foundation();
+        void _begin_foundation_move_animation(const card& moving_card, int source_x, int source_y,
+                                              int destination_foundation_index, bool has_previous_card,
+                                              const card& previous_card);
+        void _reset_foundation_move_animation();
+        [[nodiscard]] game_renderer::foundation_move_animation _renderer_foundation_move_animation() const;
 
         klondike_game _game;
         table_selection _selection;
@@ -64,6 +82,7 @@ namespace solitaire
         int _deal_animation_frame = 0;
         int _cancel_animation_cards = 0;
         int _cancel_animation_total_frames = 0;
+        foundation_move_animation_state _foundation_move_animation;
         unsigned _runtime_frames = 0;
         klondike_hint_service _hint_service;
         hint_overlay _hint_overlay;

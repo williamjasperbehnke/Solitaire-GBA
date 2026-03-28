@@ -11,6 +11,7 @@
 #include "bn_timers.h"
 
 #include "common_variable_8x16_sprite_font.h"
+#include "solitaire/core/animation_timing.h"
 #include "solitaire/core/card_sprite_registry.h"
 #include "solitaire/core/table_layout.h"
 #include "solitaire/render/held_panel_layout.h"
@@ -54,27 +55,6 @@ namespace solitaire
                 bn::sprite_tiles_items::held_panel_parts_shape_size,
                 bn::sprite_tiles_items::held_panel_parts,
                 bn::sprite_palette_items::deck_shared_palette);
-
-        [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count)
-        {
-            if(face_up_count <= 6)
-            {
-                return 7;
-            }
-            if(face_up_count <= 10)
-            {
-                return 6;
-            }
-            if(face_up_count <= 14)
-            {
-                return 5;
-            }
-            if(face_up_count <= 18)
-            {
-                return 4;
-            }
-            return 3;
-        }
 
         [[nodiscard]] constexpr int selected_tableau_depth_from_top(bool has_held_card, int pick_depth_from_top,
                                                                     int face_up_count)
@@ -161,7 +141,9 @@ namespace solitaire
     void game_renderer::render(const klondike_game& game, const table_selection& selection, int elapsed_ticks,
                                int moves_count, bool show_press_start_prompt, bool show_deal_animation,
                                int deal_animation_frame, bool show_cancel_animation, int cancel_animation_frame,
-                               bool show_victory_animation, int victory_animation_frame, unsigned animation_frame,
+                               bool show_victory_animation, int victory_animation_frame,
+                               const foundation_move_animation* foundation_move,
+                               unsigned animation_frame,
                                const bn::string<48>* hint_text, const hint_highlight* hint_cells)
     {
         _text_sprites.clear();
@@ -231,9 +213,19 @@ namespace solitaire
         card top_card;
         const bool show_won_effects = game.has_won();
         const bool lift_selected_card = ! game.has_held_card();
-        _render_top_row(game, selection, lift_selected_card, show_won_effects, animation_frame, top_card);
+        _render_top_row(game, selection, lift_selected_card, show_won_effects, foundation_move,
+                        animation_frame, top_card);
         _render_tableau(game, selection, lift_selected_card, top_card);
         _render_held_cards(game);
+
+        if(foundation_move && foundation_move->moving_card)
+        {
+            _animation_renderer.render_to_foundation(*foundation_move->moving_card, foundation_move->source_x,
+                                                     foundation_move->source_y, foundation_move->destination_index,
+                                                     foundation_move->frame, animation_timing::foundation_move_frames,
+                                                     _card_sprites);
+        }
+
         _render_status_message(game, hint_text);
     }
 
@@ -253,6 +245,7 @@ namespace solitaire
 
     void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection,
                                         bool lift_selected_card, bool show_victory_animation,
+                                        const foundation_move_animation* foundation_move,
                                         unsigned animation_frame, card& top_card)
     {
         if(game.stock_size() > 0)
@@ -286,6 +279,26 @@ namespace solitaire
         for(int foundation_index = 0; foundation_index < 4; ++foundation_index)
         {
             const int x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
+            if(foundation_move && foundation_index == foundation_move->destination_index)
+            {
+                if(foundation_move->previous_destination_card)
+                {
+                    int draw_x = x;
+                    int draw_y = table_layout::top_row_y;
+                    if(show_victory_animation)
+                    {
+                        draw_y += triangle_wave_offset(animation_frame, foundation_index * 5);
+                    }
+                    if(lift_selected_card && selection.selected_foundation_index() == foundation_index)
+                    {
+                        draw_x += selected_card_lift_x;
+                        draw_y += selected_card_lift_y;
+                    }
+                    _draw_card_sprite(*foundation_move->previous_destination_card, draw_x, draw_y);
+                }
+                continue;
+            }
+
             if(game.foundation_top(foundation_index, top_card))
             {
                 int draw_x = x;
@@ -314,7 +327,7 @@ namespace solitaire
             const int x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
             const int face_down_count = game.tableau_face_down_size(tableau_index);
             const int face_up_count = game.tableau_face_up_size(tableau_index);
-            const int face_up_step = tableau_face_up_step_for_count(face_up_count);
+            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
 
             const bool selected_tableau = selected_tableau_index == tableau_index;
             const int selected_depth_from_top = selected_tableau_depth_from_top(

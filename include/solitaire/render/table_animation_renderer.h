@@ -20,6 +20,10 @@ namespace solitaire
 
         void render_victory(const klondike_game& game, int victory_animation_frame,
                             bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const;
+
+        void render_to_foundation(const card& value, int source_x, int source_y, int foundation_index,
+                                  int animation_frame, int total_frames,
+                                  bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const;
     };
 
 }

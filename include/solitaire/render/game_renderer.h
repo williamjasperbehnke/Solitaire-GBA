@@ -25,17 +25,29 @@ namespace solitaire
             pile_ref to = { pile_kind::stock, 0 };
         };
 
+        struct foundation_move_animation
+        {
+            int frame = 0;
+            int source_x = 0;
+            int source_y = 0;
+            int destination_index = 0;
+            const card* moving_card = nullptr;
+            const card* previous_destination_card = nullptr;
+        };
+
         game_renderer();
 
         void render(const klondike_game& game, const table_selection& selection, int elapsed_ticks, int moves_count,
                     bool show_press_start_prompt, bool show_deal_animation, int deal_animation_frame,
                     bool show_cancel_animation, int cancel_animation_frame,
                     bool show_victory_animation, int victory_animation_frame,
+                    const foundation_move_animation* foundation_move,
                     unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells);
 
     private:
         void _render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                             bool show_victory_animation, unsigned animation_frame, card& top_card);
+                             bool show_victory_animation, const foundation_move_animation* foundation_move,
+                             unsigned animation_frame, card& top_card);
         void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
                              card& top_card);
         void _render_held_cards(const klondike_game& game);

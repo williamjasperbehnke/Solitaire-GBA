@@ -20,6 +20,14 @@ namespace solitaire
     class klondike_game
     {
     public:
+        struct waste_to_foundation_move
+        {
+            int foundation_index = -1;
+            card moved_card = {};
+            bool had_previous_card = false;
+            card previous_card = {};
+        };
+
         klondike_game();
 
         void set_seed(unsigned seed);
@@ -31,6 +39,7 @@ namespace solitaire
                                                              int hard_search_node_budget) const;
 
         [[nodiscard]] bool draw_from_stock();
+        [[nodiscard]] bool try_waste_to_foundation(waste_to_foundation_move& out_move);
         [[nodiscard]] bool try_pick(const pile_ref& from, int tableau_depth_from_top = 0);
         [[nodiscard]] bool try_place(const pile_ref& to);
         void cancel_held();
