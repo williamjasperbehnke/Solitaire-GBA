@@ -29,7 +29,7 @@ namespace solitaire
         constexpr int max_total_deal_attempts = 80;
 
         // Developer preview mode to quickly verify win flow and animation.
-        constexpr bool debug_start_one_move_from_win = true;
+        constexpr bool debug_start_one_move_from_win = false;
     }
 
     game_app::game_app()
