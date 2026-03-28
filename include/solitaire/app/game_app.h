@@ -19,6 +19,7 @@ namespace solitaire
         awaiting_deal,
         dealing,
         canceling,
+        victory,
         playing
     };
 
@@ -30,12 +31,21 @@ namespace solitaire
         void update();
 
     private:
+        void _update_phase();
+        void _render_frame();
+        void _update_awaiting_deal_phase();
+        void _update_dealing_phase();
+        void _update_playing_phase();
+        void _update_canceling_phase();
+        void _update_victory_phase();
+
         [[nodiscard]] unsigned _auto_seed_entropy() const;
         void _begin_deal();
         void _deal_once();
         void _deal_with_filter();
         void _reset_round_state_for_new_deal();
         [[nodiscard]] int _cancel_animation_cards_count() const;
+        void _begin_cancel_sequence();
         void _update_input();
         void _show_hint();
         void _handle_primary_action();

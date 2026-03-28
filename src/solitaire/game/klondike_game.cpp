@@ -14,6 +14,35 @@ namespace solitaire
         _deal_new_game();
     }
 
+    void klondike_game::setup_debug_one_move_to_win()
+    {
+        _stock.clear();
+        _waste.clear();
+        for(auto& foundation : _foundations)
+        {
+            foundation.clear();
+        }
+        for(auto& tableau : _tableaus)
+        {
+            tableau.face_down.clear();
+            tableau.face_up.clear();
+        }
+
+        // Build three complete foundations and one missing only the King.
+        for(int suit_index = 0; suit_index < 4; ++suit_index)
+        {
+            const int max_rank = suit_index == int(suit::hearts) ? 12 : 13;
+            for(int rank = 1; rank <= max_rank; ++rank)
+            {
+                _foundations[suit_index].push_back(card { rank, static_cast<suit>(suit_index) });
+            }
+        }
+
+        // One move away from victory: move KH from waste to the hearts foundation.
+        _waste.push_back(card { 13, suit::hearts });
+        _held_state.reset_for_new_game();
+    }
+
     bool klondike_game::is_winnable_with_search(int node_budget) const
     {
         klondike_winnability_filter filter;

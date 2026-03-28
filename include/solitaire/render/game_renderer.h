@@ -29,18 +29,21 @@ namespace solitaire
         void render(const klondike_game& game, const table_selection& selection, int elapsed_ticks, int moves_count,
                     bool show_press_start_prompt, bool show_deal_animation, int deal_animation_frame,
                     bool show_cancel_animation, int cancel_animation_frame,
+                    bool show_victory_animation, int victory_animation_frame,
                     unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells);
 
     private:
         void _render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                             card& top_card);
+                             bool show_victory_animation, unsigned animation_frame, card& top_card);
         void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
                              card& top_card);
         void _render_held_cards(const klondike_game& game);
-        void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text);
+        void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text,
+                                    bool show_victory_animation, unsigned animation_frame);
         void _render_press_start_prompt(unsigned animation_frame);
         void _render_deal_animation(const klondike_game& game, int deal_animation_frame);
         void _render_cancel_animation(const klondike_game& game, int cancel_animation_frame);
+        void _render_victory_animation(const klondike_game& game, int victory_animation_frame);
 
         void _draw_held_cards_panel(int held_cards_count);
         void _draw_panel_tile_pair(int x, int top_y, int bottom_y, int top_graphics_index, int bottom_graphics_index);

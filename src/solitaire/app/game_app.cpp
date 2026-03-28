@@ -12,6 +12,7 @@ namespace solitaire
         constexpr int deal_animation_frames_per_card = animation_timing::deal_frames_per_card;
         constexpr int deal_animation_cards = animation_timing::deal_cards;
         constexpr int deal_animation_total_frames = deal_animation_frames_per_card * deal_animation_cards;
+        constexpr int victory_animation_total_frames = 180;
         constexpr int cancel_animation_stagger_frames = animation_timing::cancel_stagger_frames;
         constexpr int cancel_animation_travel_frames = animation_timing::cancel_travel_frames;
         constexpr int cancel_max_animated_cards = 80;
@@ -26,6 +27,9 @@ namespace solitaire
         constexpr int max_strict_deal_attempts = 32;
         constexpr int fallback_winnable_depth_limit = 120;
         constexpr int max_total_deal_attempts = 80;
+
+        // Developer preview mode to quickly verify win flow and animation.
+        constexpr bool debug_start_one_move_from_win = true;
     }
 
     game_app::game_app()
@@ -38,71 +42,112 @@ namespace solitaire
         ++_runtime_frames;
         _audio.update();
         _hint_overlay.update();
+        _update_phase();
+        _render_frame();
+    }
 
+    void game_app::_update_phase()
+    {
         switch(_phase)
         {
             case run_phase::awaiting_deal:
-            {
-                if(bn::keypad::start_pressed())
-                {
-                    _begin_deal();
-                }
+                _update_awaiting_deal_phase();
                 break;
-            }
 
             case run_phase::dealing:
-            {
-                ++_deal_animation_frame;
-                _audio.on_deal_animation_frame(_deal_animation_frame, deal_animation_frames_per_card, deal_animation_cards);
-
-                if(_deal_animation_frame >= deal_animation_total_frames)
-                {
-                    _phase = run_phase::playing;
-                    _time_timer.restart();
-                    _elapsed_ticks = 0;
-                }
+                _update_dealing_phase();
                 break;
-            }
 
             case run_phase::playing:
-            {
-                if(! _game.has_won())
-                {
-                    _elapsed_ticks = _time_timer.elapsed_ticks();
-                }
-                _update_input();
-                _audio.on_win_state(_game.has_won());
+                _update_playing_phase();
                 break;
-            }
 
             case run_phase::canceling:
-            {
-                ++_deal_animation_frame;
-                _audio.on_deal_animation_frame(_deal_animation_frame, cancel_animation_stagger_frames,
-                                               _cancel_animation_cards);
-                if(_deal_animation_frame >= _cancel_animation_total_frames)
-                {
-                    _phase = run_phase::awaiting_deal;
-                    _deal_animation_frame = 0;
-                    _cancel_animation_cards = 0;
-                    _cancel_animation_total_frames = 0;
-                }
+                _update_canceling_phase();
                 break;
-            }
+
+            case run_phase::victory:
+                _update_victory_phase();
+                break;
 
             default:
                 break;
         }
+    }
 
+    void game_app::_render_frame()
+    {
         const bool show_press_start_prompt = _phase == run_phase::awaiting_deal;
         const bool show_deal_animation = _phase == run_phase::dealing;
         const bool show_cancel_animation = _phase == run_phase::canceling;
+        const bool show_victory_animation = _phase == run_phase::victory;
         const bn::string<48>* hint_text = _hint_overlay.text();
         const game_renderer::hint_highlight hint_cells = _hint_overlay.highlight();
         _renderer.render(_game, _selection, _elapsed_ticks, _moves_count, show_press_start_prompt,
                          show_deal_animation, _deal_animation_frame, show_cancel_animation,
-                         _deal_animation_frame, _runtime_frames, hint_text,
+                         _deal_animation_frame, show_victory_animation, _deal_animation_frame, _runtime_frames, hint_text,
                          hint_cells.has_move ? &hint_cells : nullptr);
+    }
+
+    void game_app::_update_awaiting_deal_phase()
+    {
+        if(bn::keypad::start_pressed())
+        {
+            _begin_deal();
+        }
+    }
+
+    void game_app::_update_dealing_phase()
+    {
+        ++_deal_animation_frame;
+        _audio.on_deal_animation_frame(_deal_animation_frame, deal_animation_frames_per_card, deal_animation_cards);
+
+        if(_deal_animation_frame >= deal_animation_total_frames)
+        {
+            _phase = run_phase::playing;
+            _time_timer.restart();
+            _elapsed_ticks = 0;
+        }
+    }
+
+    void game_app::_update_playing_phase()
+    {
+        if(_game.has_won())
+        {
+            _audio.on_win_state(true);
+            _phase = run_phase::victory;
+            _deal_animation_frame = 0;
+            _hint_overlay.clear();
+            return;
+        }
+
+        _elapsed_ticks = _time_timer.elapsed_ticks();
+        _update_input();
+        _audio.on_win_state(false);
+    }
+
+    void game_app::_update_canceling_phase()
+    {
+        ++_deal_animation_frame;
+        _audio.on_deal_animation_frame(_deal_animation_frame, cancel_animation_stagger_frames,
+                                       _cancel_animation_cards);
+        if(_deal_animation_frame >= _cancel_animation_total_frames)
+        {
+            _phase = run_phase::awaiting_deal;
+            _deal_animation_frame = 0;
+            _cancel_animation_cards = 0;
+            _cancel_animation_total_frames = 0;
+        }
+    }
+
+    void game_app::_update_victory_phase()
+    {
+        ++_deal_animation_frame;
+        if(_deal_animation_frame >= victory_animation_total_frames)
+        {
+            _phase = run_phase::awaiting_deal;
+            _deal_animation_frame = 0;
+        }
     }
 
     void game_app::_begin_deal()
@@ -114,6 +159,12 @@ namespace solitaire
         else
         {
             _deal_once();
+        }
+
+        if(debug_start_one_move_from_win)
+        {
+            _game.setup_debug_one_move_to_win();
+            _selection.set_selected_pile({ pile_kind::waste, 0 });
         }
 
         _reset_round_state_for_new_deal();
@@ -208,6 +259,19 @@ namespace solitaire
         return count;
     }
 
+    void game_app::_begin_cancel_sequence()
+    {
+        _game.cancel_held();
+        _phase = run_phase::canceling;
+        _deal_animation_frame = 0;
+        _cancel_animation_cards = _cancel_animation_cards_count();
+        _cancel_animation_total_frames =
+                (_cancel_animation_cards * cancel_animation_stagger_frames) +
+                cancel_animation_travel_frames;
+        _hint_overlay.clear();
+        _audio.on_deal_started();
+    }
+
     void game_app::_update_input()
     {
         const int previous_selected_index = _selection.selected_index();
@@ -235,15 +299,7 @@ namespace solitaire
 
         if(bn::keypad::start_pressed())
         {
-            _game.cancel_held();
-            _phase = run_phase::canceling;
-            _deal_animation_frame = 0;
-            _cancel_animation_cards = _cancel_animation_cards_count();
-            _cancel_animation_total_frames =
-                    (_cancel_animation_cards * cancel_animation_stagger_frames) +
-                    cancel_animation_travel_frames;
-            _hint_overlay.clear();
-            _audio.on_deal_started();
+            _begin_cancel_sequence();
             return;
         }
 

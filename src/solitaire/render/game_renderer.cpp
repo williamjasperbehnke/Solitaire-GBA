@@ -130,6 +130,19 @@ namespace solitaire
             return ((512 * t256) - (t256 * t256)) >> 8;
         }
 
+        [[nodiscard]] constexpr int triangle_wave_offset(unsigned animation_frame, int phase)
+        {
+            const int period = 32;
+            int step = (int(animation_frame) + phase) % period;
+            if(step >= period / 2)
+            {
+                step = period - 1 - step;
+            }
+
+            // Range roughly [-2, +1]
+            return (step / 4) - 2;
+        }
+
         [[nodiscard]] table_selection::highlight_state highlight_for_pile(const pile_ref& pile)
         {
             table_selection::highlight_state state;
@@ -250,7 +263,8 @@ namespace solitaire
     void game_renderer::render(const klondike_game& game, const table_selection& selection, int elapsed_ticks,
                                int moves_count, bool show_press_start_prompt, bool show_deal_animation,
                                int deal_animation_frame, bool show_cancel_animation, int cancel_animation_frame,
-                               unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells)
+                               bool show_victory_animation, int victory_animation_frame, unsigned animation_frame,
+                               const bn::string<48>* hint_text, const hint_highlight* hint_cells)
     {
         _text_sprites.clear();
         _card_sprites.clear();
@@ -289,6 +303,14 @@ namespace solitaire
             _render_cancel_animation(game, cancel_animation_frame);
             return;
         }
+        if(show_victory_animation)
+        {
+            _slot_highlight_bg.set_visible(false);
+            _waste_highlight_bg.set_visible(false);
+            _update_hint_highlights(nullptr);
+            _render_victory_animation(game, victory_animation_frame);
+            return;
+        }
         else if(hint_cells && hint_cells->has_move)
         {
             _update_hint_highlights(hint_cells);
@@ -301,11 +323,41 @@ namespace solitaire
         }
 
         card top_card;
+        const bool show_won_effects = game.has_won();
         const bool lift_selected_card = ! game.has_held_card();
-        _render_top_row(game, selection, lift_selected_card, top_card);
+        _render_top_row(game, selection, lift_selected_card, show_won_effects, animation_frame, top_card);
         _render_tableau(game, selection, lift_selected_card, top_card);
         _render_held_cards(game);
-        _render_status_message(game, hint_text);
+        _render_status_message(game, hint_text, show_won_effects, animation_frame);
+    }
+
+    void game_renderer::_render_victory_animation(const klondike_game& game, int victory_animation_frame)
+    {
+        bn::vector<cancel_anim_card, 80> cards;
+        append_cancel_top_row_cards(game, cards);
+        append_cancel_tableau_cards(game, cards);
+
+        for(int index = 0; index < cards.size(); ++index)
+        {
+            const cancel_anim_card& card_data = cards[index];
+            const int x = ((index * 29 + victory_animation_frame * (3 + (index % 3))) % 240) - 120;
+            const int y = ((index * 47 + victory_animation_frame * (2 + (index % 4))) % 160) - 80;
+            if(card_data.is_face_up)
+            {
+                _draw_card_sprite(card_data.value, x, y);
+            }
+            else
+            {
+                _draw_card_back_sprite(x, y);
+            }
+        }
+
+        if(((victory_animation_frame / 8) % 2) == 0)
+        {
+            _text_generator.set_center_alignment();
+            _text_generator.generate(0, 0, "VICTORY!", _text_sprites);
+            _text_generator.set_left_alignment();
+        }
     }
 
     void game_renderer::_render_cancel_animation(const klondike_game& game, int cancel_animation_frame)
@@ -320,12 +372,6 @@ namespace solitaire
 
         // Draw a sink target so the sweep has a clear endpoint.
         _draw_card_back_sprite(table_layout::stock_x, table_layout::top_row_y);
-
-        int completed_cards = cancel_animation_frame / cancel_stagger_frames;
-        if(completed_cards > cards.size())
-        {
-            completed_cards = cards.size();
-        }
 
         // Draw non-moving cards first.
         for(int index = 0; index < cards.size(); ++index)
@@ -458,7 +504,7 @@ namespace solitaire
     }
 
     void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                                        card& top_card)
+                                        bool show_victory_animation, unsigned animation_frame, card& top_card)
     {
         if(game.stock_size() > 0)
         {
@@ -495,6 +541,10 @@ namespace solitaire
             {
                 int draw_x = x;
                 int draw_y = table_layout::top_row_y;
+                if(show_victory_animation)
+                {
+                    draw_y += triangle_wave_offset(animation_frame, foundation_index * 5);
+                }
                 if(lift_selected_card && selection.selected_foundation_index() == foundation_index)
                 {
                     draw_x += selected_card_lift_x;
@@ -563,7 +613,8 @@ namespace solitaire
         }
     }
 
-    void game_renderer::_render_status_message(const klondike_game& game, const bn::string<48>* hint_text)
+    void game_renderer::_render_status_message(const klondike_game& game, const bn::string<48>* hint_text,
+                                               bool show_victory_animation, unsigned animation_frame)
     {
         if(hint_text)
         {
@@ -572,10 +623,6 @@ namespace solitaire
         else if(game.has_held_card())
         {
             _text_generator.generate(hud_x, status_y, "HOLD", _text_sprites);
-        }
-        else if(game.has_won())
-        {
-            _text_generator.generate(hud_x, status_y, "YOU WIN! START FOR NEW DEAL", _text_sprites);
         }
     }
 
