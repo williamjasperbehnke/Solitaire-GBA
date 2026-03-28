@@ -50,6 +50,7 @@ namespace solitaire
         [[nodiscard]] const pile_ref& held_from() const;
 
         [[nodiscard]] int stock_size() const;
+        [[nodiscard]] bool stock_top(card& out_card) const;
         [[nodiscard]] int waste_size() const;
         [[nodiscard]] bool waste_card_from_top(int offset, card& out_card) const;
 

@@ -320,6 +320,17 @@ namespace solitaire
         return _stock.size();
     }
 
+    bool klondike_game::stock_top(card& out_card) const
+    {
+        if(_stock.empty())
+        {
+            return false;
+        }
+
+        out_card = _stock.back();
+        return true;
+    }
+
     int klondike_game::waste_size() const
     {
         return _waste.size();

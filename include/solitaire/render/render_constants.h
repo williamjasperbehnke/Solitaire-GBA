@@ -6,6 +6,10 @@ namespace solitaire::render_constants
     constexpr int waste_preview_count = 3;
     constexpr int waste_preview_step = 8;
     constexpr int tableau_face_down_step = 4;
+    constexpr int held_cards_step = 8;
+    constexpr int held_cards_y = 52;
+    constexpr int selected_card_lift_x = 4;
+    constexpr int selected_card_lift_y = -4;
 
     [[nodiscard]] constexpr int tableau_face_up_step_for_count(int face_up_count)
     {

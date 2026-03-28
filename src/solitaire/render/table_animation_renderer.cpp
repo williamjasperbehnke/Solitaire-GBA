@@ -41,6 +41,59 @@ namespace solitaire
             return ((512 * t256) - (t256 * t256)) >> 8;
         }
 
+        [[nodiscard]] constexpr int ease_in_out_cubic_256(int t256)
+        {
+            if(t256 <= 0)
+            {
+                return 0;
+            }
+            if(t256 >= 256)
+            {
+                return 256;
+            }
+
+            const int t = t256;
+            if(t < 128)
+            {
+                return (4 * t * t * t) / (256 * 256);
+            }
+
+            const int inverse_t = 256 - t;
+            return 256 - (4 * inverse_t * inverse_t * inverse_t) / (256 * 256);
+        }
+
+        struct flight_position
+        {
+            int x = 0;
+            int y = 0;
+        };
+
+        [[nodiscard]] constexpr flight_position flight_point(int source_x, int source_y, int target_x, int target_y,
+                                                             int animation_frame, int total_frames, int arc_height)
+        {
+            if(total_frames <= 0)
+            {
+                return { source_x, source_y };
+            }
+
+            int t256 = (animation_frame * 256) / total_frames;
+            if(t256 < 0)
+            {
+                t256 = 0;
+            }
+            else if(t256 > 256)
+            {
+                t256 = 256;
+            }
+
+            const int eased_t256 = ease_in_out_cubic_256(t256);
+            const int x = source_x + (((target_x - source_x) * eased_t256 + (eased_t256 >= 0 ? 128 : -128)) / 256);
+            int y = source_y + (((target_y - source_y) * eased_t256 + (eased_t256 >= 0 ? 128 : -128)) / 256);
+            const int arc_t = t256 <= 128 ? t256 : (256 - t256);
+            y -= (arc_t * arc_height) / 128;
+            return { x, y };
+        }
+
         constexpr void deal_target_for_step(int step, int& column, int& row)
         {
             int remaining = step;
@@ -280,38 +333,65 @@ namespace solitaire
         }
     }
 
-    void table_animation_renderer::render_to_foundation(
-            const card& value, int source_x, int source_y, int foundation_index, int animation_frame, int total_frames,
+    void table_animation_renderer::render_stock_to_waste(
+            const card& value, int animation_frame, int total_frames,
             bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const
     {
-        if(total_frames <= 0)
-        {
-            return;
-        }
-
-        int t256 = (animation_frame * 256) / total_frames;
-        if(t256 < 0)
-        {
-            t256 = 0;
-        }
-        else if(t256 > 256)
-        {
-            t256 = 256;
-        }
-
-        const int eased_t256 = ease_out_quad_256(t256);
-        const int target_x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
+        const int source_x = table_layout::stock_x;
+        const int source_y = table_layout::top_row_y;
+        const int target_x = table_layout::waste_x + ((waste_preview_count - 1) * waste_preview_step);
         const int target_y = table_layout::top_row_y;
+        const flight_position pos = flight_point(source_x, source_y, target_x, target_y, animation_frame, total_frames,
+                                                 4);
 
-        const int x = source_x + ((target_x - source_x) * eased_t256) / 256;
-        int y = source_y + ((target_y - source_y) * eased_t256) / 256;
-        const int arc_t = t256 <= 128 ? t256 : (256 - t256);
-        y -= (arc_t * 3) / 128;
-
-        bn::sprite_ptr sprite = card_face_item(value).create_sprite(x, y);
+        bn::sprite_ptr sprite = card_face_item(value).create_sprite(pos.x, pos.y);
         sprite.set_palette(bn::sprite_palette_items::deck_shared_palette);
         sprite.set_bg_priority(0);
         sprite.set_z_order(-2);
         out_card_sprites.push_back(bn::move(sprite));
     }
+
+    void table_animation_renderer::render_waste_to_stock(
+            int animation_frame, int total_frames, bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const
+    {
+        const int source_x = table_layout::waste_x + ((waste_preview_count - 1) * waste_preview_step);
+        const int source_y = table_layout::top_row_y;
+        const int target_x = table_layout::stock_x;
+        const int target_y = table_layout::top_row_y;
+        const int arc_height = 4;
+        const flight_position primary_pos = flight_point(source_x, source_y, target_x, target_y, animation_frame,
+                                                         total_frames, arc_height);
+
+        bn::sprite_ptr sprite = card_back_item().create_sprite(primary_pos.x, primary_pos.y);
+        sprite.set_palette(bn::sprite_palette_items::deck_shared_palette);
+        sprite.set_bg_priority(0);
+        sprite.set_z_order(-2);
+        out_card_sprites.push_back(bn::move(sprite));
+
+        if(animation_frame >= 2)
+        {
+            const int lagged_frame = animation_frame - 2;
+            const flight_position trailing_pos = flight_point(source_x, source_y, target_x, target_y, lagged_frame,
+                                                              total_frames, arc_height);
+            bn::sprite_ptr trailing_sprite = card_back_item().create_sprite(trailing_pos.x, trailing_pos.y + 1);
+            trailing_sprite.set_palette(bn::sprite_palette_items::deck_shared_palette);
+            trailing_sprite.set_bg_priority(0);
+            trailing_sprite.set_z_order(-1);
+            out_card_sprites.push_back(bn::move(trailing_sprite));
+        }
+    }
+
+    void table_animation_renderer::render_card_flight(
+            const card& value, int source_x, int source_y, int target_x, int target_y, int animation_frame,
+            int total_frames, bn::vector<bn::sprite_ptr, 128>& out_card_sprites) const
+    {
+        const flight_position pos = flight_point(source_x, source_y, target_x, target_y, animation_frame, total_frames,
+                                                 2);
+        bn::sprite_ptr sprite = card_face_item(value).create_sprite(pos.x, pos.y);
+        sprite.set_palette(bn::sprite_palette_items::deck_shared_palette);
+        sprite.set_bg_priority(0);
+        sprite.set_z_order(-2);
+        out_card_sprites.push_back(bn::move(sprite));
+    }
+
 }

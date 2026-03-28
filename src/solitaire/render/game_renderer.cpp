@@ -39,8 +39,8 @@ namespace solitaire
         constexpr int held_cards_y = 52;
         constexpr int held_cards_step = 8;
 
-        constexpr int selected_card_lift_x = 4;
-        constexpr int selected_card_lift_y = -4;
+        constexpr int selected_card_lift_x = render_constants::selected_card_lift_x;
+        constexpr int selected_card_lift_y = render_constants::selected_card_lift_y;
         constexpr int prompt_bob_period_frames = 24;
         constexpr int prompt_blink_period_frames = 40;
         constexpr int prompt_base_x = -92;
@@ -119,6 +119,31 @@ namespace solitaire
 
             return state;
         }
+
+        [[nodiscard]] bool hide_for_transfer(const game_renderer::card_transfer_animation* transfer, int x, int y,
+                                             const card& value)
+        {
+            if(! transfer || transfer->cards_count <= 0 || ! transfer->cards)
+            {
+                return false;
+            }
+
+            for(int index = 0; index < transfer->cards_count; ++index)
+            {
+                const card& moving = transfer->cards[index];
+                const int target_x = transfer->target_x + (index * transfer->destination_stack_step_x);
+                const int target_y = transfer->target_y + (index * transfer->destination_stack_step_y);
+                const int dx = x - target_x;
+                const int dy = y - target_y;
+                const bool near_target = dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6;
+                if(near_target && value.rank == moving.rank && value.card_suit == moving.card_suit)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     game_renderer::game_renderer() :
@@ -142,7 +167,9 @@ namespace solitaire
                                int moves_count, bool show_press_start_prompt, bool show_deal_animation,
                                int deal_animation_frame, bool show_cancel_animation, int cancel_animation_frame,
                                bool show_victory_animation, int victory_animation_frame,
-                               const foundation_move_animation* foundation_move,
+                               const stock_draw_animation* stock_draw,
+                               const stock_recycle_animation* stock_recycle,
+                               const card_transfer_animation* transfer,
                                unsigned animation_frame,
                                const bn::string<48>* hint_text, const hint_highlight* hint_cells)
     {
@@ -213,20 +240,48 @@ namespace solitaire
         card top_card;
         const bool show_won_effects = game.has_won();
         const bool lift_selected_card = ! game.has_held_card();
-        _render_top_row(game, selection, lift_selected_card, show_won_effects, foundation_move,
-                        animation_frame, top_card);
-        _render_tableau(game, selection, lift_selected_card, top_card);
-        _render_held_cards(game);
+        _render_top_row(game, selection, lift_selected_card, show_won_effects, transfer, animation_frame, top_card);
+        _render_tableau(game, selection, lift_selected_card, transfer, top_card);
+        const bool hide_held_cards = transfer && game.has_held_card();
+        _render_held_cards(game, hide_held_cards);
 
-        if(foundation_move && foundation_move->moving_card)
+        if(stock_draw && stock_draw->moving_card)
         {
-            _animation_renderer.render_to_foundation(*foundation_move->moving_card, foundation_move->source_x,
-                                                     foundation_move->source_y, foundation_move->destination_index,
-                                                     foundation_move->frame, animation_timing::foundation_move_frames,
-                                                     _card_sprites);
+            _animation_renderer.render_stock_to_waste(*stock_draw->moving_card, stock_draw->frame,
+                                                      animation_timing::stock_draw_frames, _card_sprites);
+        }
+        else if(stock_recycle)
+        {
+            _animation_renderer.render_waste_to_stock(stock_recycle->frame, animation_timing::stock_recycle_frames,
+                                                      _card_sprites);
         }
 
-        _render_status_message(game, hint_text);
+        if(transfer && transfer->cards_count > 0 && transfer->cards)
+        {
+            constexpr int trail_frame_stagger = 2;
+            for(int index = 0; index < transfer->cards_count; ++index)
+            {
+                int card_frame = transfer->frame - (index * trail_frame_stagger);
+                if(card_frame < 0)
+                {
+                    card_frame = 0;
+                }
+
+                const int source_x = transfer->source_x + (index * transfer->source_stack_step_x);
+                const int source_y = transfer->source_y + (index * transfer->source_stack_step_y);
+                const int target_x = transfer->target_x + (index * transfer->destination_stack_step_x);
+                const int target_y = transfer->target_y + (index * transfer->destination_stack_step_y);
+
+                _animation_renderer.render_card_flight(transfer->cards[index], source_x, source_y, target_x, target_y,
+                                                       card_frame, animation_timing::hold_release_frames,
+                                                       _card_sprites);
+            }
+        }
+
+        if(! hide_held_cards || hint_text)
+        {
+            _render_status_message(game, hint_text);
+        }
     }
 
     void game_renderer::_render_press_start_prompt(unsigned animation_frame)
@@ -245,8 +300,7 @@ namespace solitaire
 
     void game_renderer::_render_top_row(const klondike_game& game, const table_selection& selection,
                                         bool lift_selected_card, bool show_victory_animation,
-                                        const foundation_move_animation* foundation_move,
-                                        unsigned animation_frame, card& top_card)
+                                        const card_transfer_animation* transfer, unsigned animation_frame, card& top_card)
     {
         if(game.stock_size() > 0)
         {
@@ -272,16 +326,20 @@ namespace solitaire
                     draw_x += selected_card_lift_x;
                     draw_y += selected_card_lift_y;
                 }
-                _draw_card_sprite(top_card, draw_x, draw_y);
+                if(! hide_for_transfer(transfer, draw_x, draw_y, top_card))
+                {
+                    _draw_card_sprite(top_card, draw_x, draw_y);
+                }
             }
         }
 
         for(int foundation_index = 0; foundation_index < 4; ++foundation_index)
         {
             const int x = table_layout::foundation_base_x + (foundation_index * table_layout::pile_x_step);
-            if(foundation_move && foundation_index == foundation_move->destination_index)
+            if(transfer && transfer->show_previous_foundation_card &&
+               foundation_index == transfer->previous_foundation_index)
             {
-                if(foundation_move->previous_destination_card)
+                if(transfer->previous_foundation_card)
                 {
                     int draw_x = x;
                     int draw_y = table_layout::top_row_y;
@@ -294,7 +352,7 @@ namespace solitaire
                         draw_x += selected_card_lift_x;
                         draw_y += selected_card_lift_y;
                     }
-                    _draw_card_sprite(*foundation_move->previous_destination_card, draw_x, draw_y);
+                    _draw_card_sprite(*transfer->previous_foundation_card, draw_x, draw_y);
                 }
                 continue;
             }
@@ -312,13 +370,16 @@ namespace solitaire
                     draw_x += selected_card_lift_x;
                     draw_y += selected_card_lift_y;
                 }
-                _draw_card_sprite(top_card, draw_x, draw_y);
+                if(! hide_for_transfer(transfer, draw_x, draw_y, top_card))
+                {
+                    _draw_card_sprite(top_card, draw_x, draw_y);
+                }
             }
         }
     }
 
     void game_renderer::_render_tableau(const klondike_game& game, const table_selection& selection,
-                                        bool lift_selected_card, card& top_card)
+                                        bool lift_selected_card, const card_transfer_animation* transfer, card& top_card)
     {
         const int selected_tableau_index = selection.selected_tableau_index();
 
@@ -352,15 +413,18 @@ namespace solitaire
                         draw_x += selected_card_lift_x;
                         draw_y += selected_card_lift_y;
                     }
-                    _draw_card_sprite(top_card, draw_x, draw_y);
+                    if(! hide_for_transfer(transfer, draw_x, draw_y, top_card))
+                    {
+                        _draw_card_sprite(top_card, draw_x, draw_y);
+                    }
                 }
             }
         }
     }
 
-    void game_renderer::_render_held_cards(const klondike_game& game)
+    void game_renderer::_render_held_cards(const klondike_game& game, bool hide_held_cards)
     {
-        if(! game.has_held_card())
+        if(hide_held_cards || ! game.has_held_card())
         {
             return;
         }

@@ -25,14 +25,33 @@ namespace solitaire
             pile_ref to = { pile_kind::stock, 0 };
         };
 
-        struct foundation_move_animation
+        struct stock_draw_animation
+        {
+            int frame = 0;
+            const card* moving_card = nullptr;
+        };
+
+        struct stock_recycle_animation
+        {
+            int frame = 0;
+        };
+
+        struct card_transfer_animation
         {
             int frame = 0;
             int source_x = 0;
             int source_y = 0;
-            int destination_index = 0;
-            const card* moving_card = nullptr;
-            const card* previous_destination_card = nullptr;
+            int target_x = 0;
+            int target_y = 0;
+            int cards_count = 0;
+            const card* cards = nullptr;
+            int source_stack_step_x = 0;
+            int source_stack_step_y = 0;
+            int destination_stack_step_x = 0;
+            int destination_stack_step_y = 0;
+            bool show_previous_foundation_card = false;
+            int previous_foundation_index = 0;
+            const card* previous_foundation_card = nullptr;
         };
 
         game_renderer();
@@ -41,16 +60,18 @@ namespace solitaire
                     bool show_press_start_prompt, bool show_deal_animation, int deal_animation_frame,
                     bool show_cancel_animation, int cancel_animation_frame,
                     bool show_victory_animation, int victory_animation_frame,
-                    const foundation_move_animation* foundation_move,
+                    const stock_draw_animation* stock_draw,
+                    const stock_recycle_animation* stock_recycle,
+                    const card_transfer_animation* transfer,
                     unsigned animation_frame, const bn::string<48>* hint_text, const hint_highlight* hint_cells);
 
     private:
         void _render_top_row(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
-                             bool show_victory_animation, const foundation_move_animation* foundation_move,
-                             unsigned animation_frame, card& top_card);
-        void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
+                             bool show_victory_animation, const card_transfer_animation* transfer, unsigned animation_frame,
                              card& top_card);
-        void _render_held_cards(const klondike_game& game);
+        void _render_tableau(const klondike_game& game, const table_selection& selection, bool lift_selected_card,
+                             const card_transfer_animation* transfer, card& top_card);
+        void _render_held_cards(const klondike_game& game, bool hide_held_cards);
         void _render_status_message(const klondike_game& game, const bn::string<48>* hint_text);
         void _render_press_start_prompt(unsigned animation_frame);
 

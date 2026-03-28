@@ -9,7 +9,9 @@ namespace solitaire::animation_timing
     constexpr int cancel_stagger_frames = 3;
     constexpr int cancel_travel_frames = 24;
 
-    constexpr int foundation_move_frames = 12;
+    constexpr int stock_draw_frames = 10;
+    constexpr int stock_recycle_frames = 10;
+    constexpr int hold_release_frames = 12;
 }
 
 #endif

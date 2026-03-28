@@ -5,6 +5,7 @@
 
 #include "solitaire/core/animation_timing.h"
 #include "solitaire/core/table_layout.h"
+#include "solitaire/render/held_panel_layout.h"
 #include "solitaire/render/render_constants.h"
 
 namespace solitaire
@@ -17,11 +18,17 @@ namespace solitaire
         constexpr int victory_animation_total_frames = 180;
         constexpr int cancel_animation_stagger_frames = animation_timing::cancel_stagger_frames;
         constexpr int cancel_animation_travel_frames = animation_timing::cancel_travel_frames;
-        constexpr int foundation_move_animation_frames = animation_timing::foundation_move_frames;
+        constexpr int stock_draw_animation_frames = animation_timing::stock_draw_frames;
+        constexpr int stock_recycle_animation_frames = animation_timing::stock_recycle_frames;
+        constexpr int card_transfer_animation_frames = animation_timing::hold_release_frames;
         constexpr int cancel_max_animated_cards = 80;
         constexpr int waste_preview_count = render_constants::waste_preview_count;
         constexpr int waste_preview_step = render_constants::waste_preview_step;
         constexpr int tableau_face_down_step = render_constants::tableau_face_down_step;
+        constexpr int held_cards_step = render_constants::held_cards_step;
+        constexpr int held_cards_y = render_constants::held_cards_y;
+        constexpr int selected_card_lift_x = render_constants::selected_card_lift_x;
+        constexpr int selected_card_lift_y = render_constants::selected_card_lift_y;
 
         // Disabled by default to keep deal start instant.
         constexpr bool enable_winnability_filter = false;
@@ -82,6 +89,93 @@ namespace solitaire
                     return false;
             }
         }
+
+        [[nodiscard]] bool tableau_card_position(const klondike_game& game, int tableau_index, int face_up_index,
+                                                 int& out_x, int& out_y)
+        {
+            const int face_up_count = game.tableau_face_up_size(tableau_index);
+            if(face_up_index < 0 || face_up_index >= face_up_count)
+            {
+                return false;
+            }
+
+            const int face_down_count = game.tableau_face_down_size(tableau_index);
+            const int face_up_step = render_constants::tableau_face_up_step_for_count(face_up_count);
+            out_x = table_layout::tableau_base_x + (tableau_index * table_layout::pile_x_step);
+            out_y = table_layout::tableau_base_y + (face_down_count * tableau_face_down_step) +
+                    (face_up_index * face_up_step);
+            return true;
+        }
+
+        [[nodiscard]] bool tableau_pick_source_position(const klondike_game& game, int tableau_index, int pick_depth,
+                                                        int& out_x, int& out_y)
+        {
+            const int face_up_count = game.tableau_face_up_size(tableau_index);
+            if(face_up_count <= 0)
+            {
+                return false;
+            }
+
+            int depth = pick_depth;
+            if(depth < 0)
+            {
+                depth = 0;
+            }
+            else if(depth > face_up_count - 1)
+            {
+                depth = face_up_count - 1;
+            }
+
+            const int source_face_up_index = face_up_count - 1 - depth;
+            return tableau_card_position(game, tableau_index, source_face_up_index, out_x, out_y);
+        }
+
+        [[nodiscard]] bool target_position_for_moved_cards(const klondike_game& game, const pile_ref& target_pile,
+                                                           int moved_cards_count, int& out_x, int& out_y)
+        {
+            if(target_pile.kind == pile_kind::tableau && moved_cards_count > 1)
+            {
+                const int face_up_count = game.tableau_face_up_size(target_pile.index);
+                const int base_up_index = face_up_count - moved_cards_count;
+                return tableau_card_position(game, target_pile.index, base_up_index, out_x, out_y);
+            }
+
+            return top_card_position_for_selection(game, target_pile, out_x, out_y);
+        }
+
+        bool held_primary_position(const klondike_game& game, int& out_x, int& out_y)
+        {
+            const int held_count = game.held_cards_count();
+            if(held_count <= 0)
+            {
+                return false;
+            }
+
+            out_x = held_panel_layout::first_card_x(held_count, held_cards_step);
+            out_y = held_cards_y;
+            return true;
+        }
+
+        void copy_held_cards(const klondike_game& game, bn::vector<card, 19>& out_cards)
+        {
+            out_cards.clear();
+            const int held_count = game.held_cards_count();
+            for(int index = 0; index < held_count; ++index)
+            {
+                out_cards.push_back(game.held_card(index));
+            }
+        }
+
+        void apply_selected_lift_if_target_selected(const table_selection& selection, const pile_ref& target_pile,
+                                                    int& x, int& y)
+        {
+            const pile_ref selected = selection.selected_pile();
+            if(selected.kind == target_pile.kind && selected.index == target_pile.index)
+            {
+                x += selected_card_lift_x;
+                y += selected_card_lift_y;
+            }
+        }
     }
 
     game_app::game_app()
@@ -133,16 +227,19 @@ namespace solitaire
         const bool show_deal_animation = _phase == run_phase::dealing;
         const bool show_cancel_animation = _phase == run_phase::canceling;
         const bool show_victory_animation = _phase == run_phase::victory;
-        const game_renderer::foundation_move_animation foundation_move_for_render =
-                _renderer_foundation_move_animation();
+        const game_renderer::stock_draw_animation stock_draw_for_render = _renderer_stock_draw_animation();
+        const game_renderer::stock_recycle_animation stock_recycle_for_render =
+                _renderer_stock_recycle_animation();
+        const game_renderer::card_transfer_animation transfer_for_render = _renderer_card_transfer_animation();
         const bn::string<48>* hint_text = _hint_overlay.text();
         const game_renderer::hint_highlight hint_cells = _hint_overlay.highlight();
         _renderer.render(_game, _selection, _elapsed_ticks, _moves_count, show_press_start_prompt,
                          show_deal_animation, _deal_animation_frame, show_cancel_animation,
                          _deal_animation_frame, show_victory_animation, _deal_animation_frame,
-                         _foundation_move_animation.active ? &foundation_move_for_render : nullptr,
-                         _runtime_frames, hint_text,
-                         hint_cells.has_move ? &hint_cells : nullptr);
+                         _stock_draw_animation.active ? &stock_draw_for_render : nullptr,
+                         _stock_recycle_animation.active ? &stock_recycle_for_render : nullptr,
+                         _card_transfer_animation.active ? &transfer_for_render : nullptr,
+                         _runtime_frames, hint_text, hint_cells.has_move ? &hint_cells : nullptr);
     }
 
     void game_app::_update_awaiting_deal_phase()
@@ -170,13 +267,8 @@ namespace solitaire
     {
         _elapsed_ticks = _time_timer.elapsed_ticks();
 
-        if(_foundation_move_animation.active)
+        if(_update_active_playing_animations())
         {
-            ++_foundation_move_animation.frame;
-            if(_foundation_move_animation.frame >= foundation_move_animation_frames)
-            {
-                _reset_foundation_move_animation();
-            }
             return;
         }
 
@@ -275,7 +367,7 @@ namespace solitaire
         _elapsed_ticks = 0;
         _moves_count = 0;
         _deal_animation_frame = 0;
-        _reset_foundation_move_animation();
+        _reset_all_playing_animations();
         _phase = run_phase::dealing;
         _hint_overlay.clear();
         _audio.on_deal_started();
@@ -287,6 +379,76 @@ namespace solitaire
         _hint_overlay.show(hint, 180);
         _hint_overlay.apply_selection(_selection);
         _audio.on_selection_changed();
+    }
+
+    int game_app::_tableau_destination_step(const pile_ref& pile) const
+    {
+        if(pile.kind != pile_kind::tableau)
+        {
+            return 0;
+        }
+
+        return render_constants::tableau_face_up_step_for_count(_game.tableau_face_up_size(pile.index));
+    }
+
+    void game_app::_begin_transfer_to_target_pile(const bn::vector<card, 19>& cards, int source_x, int source_y,
+                                                  const pile_ref& target_pile, int moved_cards_count)
+    {
+        int target_x = 0;
+        int target_y = 0;
+        if(! target_position_for_moved_cards(_game, target_pile, moved_cards_count, target_x, target_y))
+        {
+            return;
+        }
+
+        apply_selected_lift_if_target_selected(_selection, target_pile, target_x, target_y);
+        _begin_card_transfer_animation(cards, source_x, source_y, target_x, target_y, held_cards_step, 0, 0,
+                                       _tableau_destination_step(target_pile));
+    }
+
+    void game_app::_begin_transfer_to_held_from_source(const pile_ref& source_pile, int source_x, int source_y)
+    {
+        int target_x = 0;
+        int target_y = 0;
+        if(! held_primary_position(_game, target_x, target_y))
+        {
+            return;
+        }
+
+        bn::vector<card, 19> moving_cards;
+        copy_held_cards(_game, moving_cards);
+        int source_step_y = 0;
+        if(source_pile.kind == pile_kind::tableau)
+        {
+            source_step_y = render_constants::tableau_face_up_step_for_count(
+                    _game.tableau_face_up_size(source_pile.index) + moving_cards.size());
+        }
+
+        _begin_card_transfer_animation(moving_cards, source_x, source_y, target_x, target_y, 0, source_step_y,
+                                       held_cards_step, 0);
+    }
+
+    void game_app::_cancel_held_with_return_animation()
+    {
+        if(! _game.has_held_card())
+        {
+            return;
+        }
+
+        const int held_cards_count = _game.held_cards_count();
+        int source_x = 0;
+        int source_y = 0;
+        bn::vector<card, 19> moving_cards;
+        pile_ref held_from = { pile_kind::stock, 0 };
+        const bool can_animate_return =
+                _capture_held_for_animation(held_from, source_x, source_y, moving_cards);
+
+        _audio.on_cancel_pressed(true);
+        _game.cancel_held();
+        if(can_animate_return)
+        {
+            _begin_transfer_to_target_pile(moving_cards, source_x, source_y, held_from, held_cards_count);
+        }
     }
 
     int game_app::_cancel_animation_cards_count() const
@@ -336,9 +498,66 @@ namespace solitaire
         _cancel_animation_total_frames =
                 (_cancel_animation_cards * cancel_animation_stagger_frames) +
                 cancel_animation_travel_frames;
-        _reset_foundation_move_animation();
+        _reset_all_playing_animations();
         _hint_overlay.clear();
         _audio.on_deal_started();
+    }
+
+    bool game_app::_capture_held_for_animation(pile_ref& held_from, int& source_x, int& source_y,
+                                               bn::vector<card, 19>& cards) const
+    {
+        if(! _game.has_held_card())
+        {
+            return false;
+        }
+
+        held_from = _game.held_from();
+        copy_held_cards(_game, cards);
+        return held_primary_position(_game, source_x, source_y);
+    }
+
+    bool game_app::_update_active_playing_animations()
+    {
+        if(_stock_draw_animation.active)
+        {
+            ++_stock_draw_animation.frame;
+            if(_stock_draw_animation.frame >= stock_draw_animation_frames)
+            {
+                _complete_stock_draw_animation();
+                _reset_stock_draw_animation();
+            }
+            return true;
+        }
+
+        if(_stock_recycle_animation.active)
+        {
+            ++_stock_recycle_animation.frame;
+            if(_stock_recycle_animation.frame >= stock_recycle_animation_frames)
+            {
+                _complete_stock_recycle_animation();
+                _reset_stock_recycle_animation();
+            }
+            return true;
+        }
+
+        if(_card_transfer_animation.active)
+        {
+            ++_card_transfer_animation.frame;
+            if(_card_transfer_animation.frame >= card_transfer_animation_frames)
+            {
+                _reset_card_transfer_animation();
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    void game_app::_reset_all_playing_animations()
+    {
+        _reset_stock_draw_animation();
+        _reset_stock_recycle_animation();
+        _reset_card_transfer_animation();
     }
 
     void game_app::_update_input()
@@ -375,8 +594,16 @@ namespace solitaire
 
         if(bn::keypad::b_pressed())
         {
-            _audio.on_cancel_pressed(_game.has_held_card());
-            _game.cancel_held();
+            const bool had_held_card = _game.has_held_card();
+            if(had_held_card)
+            {
+                _cancel_held_with_return_animation();
+            }
+            else
+            {
+                _audio.on_cancel_pressed(false);
+                _game.cancel_held();
+            }
             return;
         }
 
@@ -391,8 +618,7 @@ namespace solitaire
             const bool had_held_card = _game.has_held_card();
             if(had_held_card)
             {
-                _audio.on_cancel_pressed(true);
-                _game.cancel_held();
+                _cancel_held_with_return_animation();
             }
 
             if(! _selection.is_stock_selected())
@@ -433,11 +659,63 @@ namespace solitaire
 
         if(_game.has_held_card())
         {
-            const pile_ref held_from = _game.held_from();
+            pile_ref held_from = { pile_kind::stock, 0 };
+            int source_x = 0;
+            int source_y = 0;
+            bn::vector<card, 19> moving_cards;
+            const bool has_source = _capture_held_for_animation(held_from, source_x, source_y, moving_cards);
+            const int held_cards_count = _game.held_cards_count();
+            card previous_foundation_card;
+            const bool had_previous_foundation_card =
+                    selected.kind == pile_kind::foundation &&
+                    _game.foundation_top(selected.index, previous_foundation_card);
             const bool success = _game.try_place(selected);
             _audio.on_place_attempt(success);
             if(success)
             {
+                if(selected.kind == pile_kind::tableau)
+                {
+                    const int face_up_count = _game.tableau_face_up_size(selected.index);
+                    int highlight_depth = held_cards_count - 1;
+                    if(highlight_depth < 0)
+                    {
+                        highlight_depth = 0;
+                    }
+                    const int max_depth = face_up_count > 0 ? face_up_count - 1 : 0;
+                    if(highlight_depth > max_depth)
+                    {
+                        highlight_depth = max_depth;
+                    }
+                    _selection.set_selected_pile(selected, highlight_depth);
+                }
+
+                if(selected.kind == pile_kind::foundation)
+                {
+                    if(has_source)
+                    {
+                        pile_ref destination = { pile_kind::foundation, selected.index };
+                        int target_x = table_layout::foundation_base_x + (selected.index * table_layout::pile_x_step);
+                        int target_y = table_layout::top_row_y;
+                        apply_selected_lift_if_target_selected(_selection, destination, target_x, target_y);
+                        _begin_card_transfer_animation(
+                                moving_cards, source_x, source_y, target_x, target_y, held_cards_step, 0, 0, 0,
+                                had_previous_foundation_card,
+                                selected.index,
+                                previous_foundation_card);
+                    }
+                }
+                else
+                {
+                    const pile_ref target_pile = (selected.kind == held_from.kind && selected.index == held_from.index) ?
+                                                         held_from :
+                                                         selected;
+                    if(has_source)
+                    {
+                        _begin_transfer_to_target_pile(moving_cards, source_x, source_y, target_pile,
+                                                       held_cards_count);
+                    }
+                }
+
                 if(selected.kind != held_from.kind || selected.index != held_from.index)
                 {
                     ++_moves_count;
@@ -448,23 +726,24 @@ namespace solitaire
 
         if(selected.kind == pile_kind::stock)
         {
-            const bool stock_had_cards = _game.stock_size() > 0;
-            const bool success = _game.draw_from_stock();
-            _audio.on_draw_from_stock(success);
-            if(success)
+            card moving_card;
+            if(_game.stock_top(moving_card))
             {
+                _begin_stock_draw_animation(moving_card);
                 ++_moves_count;
-                if(stock_had_cards)
+                _audio.on_draw_from_stock(true);
+            }
+            else
+            {
+                if(_game.waste_size() > 0)
                 {
-                    klondike_game::waste_to_foundation_move move_result;
-                    if(_game.try_waste_to_foundation(move_result))
-                    {
-                        _begin_foundation_move_animation(
-                                move_result.moved_card,
-                                table_layout::waste_x + ((waste_preview_count - 1) * waste_preview_step),
-                                table_layout::top_row_y, move_result.foundation_index,
-                                move_result.had_previous_card, move_result.previous_card);
-                    }
+                    _begin_stock_recycle_animation();
+                    ++_moves_count;
+                    _audio.on_draw_from_stock(true);
+                }
+                else
+                {
+                    _audio.on_draw_from_stock(false);
                 }
             }
             return;
@@ -472,16 +751,35 @@ namespace solitaire
 
         if(selected.kind == pile_kind::tableau)
         {
-            const bool success = _game.try_pick(selected, _selection.tableau_pick_depth_from_top());
+            int source_x = 0;
+            int source_y = 0;
+            const int pick_depth = _selection.tableau_pick_depth_from_top();
+            const bool has_source = tableau_pick_source_position(_game, selected.index, pick_depth, source_x, source_y);
+            const bool success = _game.try_pick(selected, pick_depth);
             _audio.on_pick_attempt(success);
             if(success)
             {
                 _selection.reset_tableau_pick_depth();
+                if(has_source)
+                {
+                    _begin_transfer_to_held_from_source(selected, source_x, source_y);
+                }
             }
             return;
         }
 
-        _audio.on_pick_attempt(_game.try_pick(selected, 0));
+        int source_x = 0;
+        int source_y = 0;
+        const bool has_source = top_card_position_for_selection(_game, selected, source_x, source_y);
+        const bool success = _game.try_pick(selected, 0);
+        _audio.on_pick_attempt(success);
+        if(success)
+        {
+            if(has_source)
+            {
+                _begin_transfer_to_held_from_source(selected, source_x, source_y);
+            }
+        }
     }
 
     void game_app::_handle_quick_send_to_foundation()
@@ -522,9 +820,13 @@ namespace solitaire
                 return;
             }
 
-            const table_selection::highlight_state highlight = _selection.highlight();
-            source_x = highlight.x;
-            source_y = highlight.y;
+            bn::vector<card, 19> moving_cards;
+            pile_ref held_from = { pile_kind::stock, 0 };
+            if(! _capture_held_for_animation(held_from, source_x, source_y, moving_cards))
+            {
+                _audio.on_place_attempt(false);
+                return;
+            }
         }
 
         if(_game.held_cards_count() != 1)
@@ -565,9 +867,13 @@ namespace solitaire
         _audio.on_place_attempt(placed);
         if(placed)
         {
-            _begin_foundation_move_animation(moving_card, source_x, source_y, placed_foundation_index, has_previous_card,
-                                             previous_card);
             const pile_ref destination { pile_kind::foundation, placed_foundation_index };
+            int target_x = table_layout::foundation_base_x + (placed_foundation_index * table_layout::pile_x_step);
+            int target_y = table_layout::top_row_y;
+            apply_selected_lift_if_target_selected(_selection, destination, target_x, target_y);
+            _begin_card_transfer_animation(
+                    moving_card, source_x, source_y, target_x, target_y, has_previous_card, placed_foundation_index,
+                    previous_card);
             if(held_from.kind != destination.kind || held_from.index != destination.index)
             {
                 ++_moves_count;
@@ -575,39 +881,133 @@ namespace solitaire
         }
     }
 
-    void game_app::_begin_foundation_move_animation(const card& moving_card, int source_x, int source_y,
-                                                    int destination_foundation_index, bool has_previous_card,
-                                                    const card& previous_card)
+    void game_app::_begin_stock_draw_animation(const card& moving_card)
     {
-        _foundation_move_animation = {};
-        _foundation_move_animation.active = true;
-        _foundation_move_animation.source_x = source_x;
-        _foundation_move_animation.source_y = source_y;
-        _foundation_move_animation.destination_foundation_index = destination_foundation_index;
-        _foundation_move_animation.moving_card = moving_card;
-        _foundation_move_animation.has_previous_card = has_previous_card;
-        if(has_previous_card)
+        _stock_draw_animation = {};
+        _stock_draw_animation.active = true;
+        _stock_draw_animation.moving_card = moving_card;
+    }
+
+    void game_app::_complete_stock_draw_animation()
+    {
+        if(! _game.draw_from_stock())
         {
-            _foundation_move_animation.previous_card = previous_card;
+            return;
+        }
+
+        klondike_game::waste_to_foundation_move move_result;
+        if(_game.try_waste_to_foundation(move_result))
+        {
+            _begin_card_transfer_animation(
+                    move_result.moved_card, table_layout::waste_x + ((waste_preview_count - 1) * waste_preview_step),
+                    table_layout::top_row_y,
+                    table_layout::foundation_base_x + (move_result.foundation_index * table_layout::pile_x_step),
+                    table_layout::top_row_y, move_result.had_previous_card, move_result.foundation_index,
+                    move_result.previous_card);
         }
     }
 
-    void game_app::_reset_foundation_move_animation()
+    void game_app::_reset_stock_draw_animation()
     {
-        _foundation_move_animation = {};
+        _stock_draw_animation = {};
     }
 
-    game_renderer::foundation_move_animation game_app::_renderer_foundation_move_animation() const
+    game_renderer::stock_draw_animation game_app::_renderer_stock_draw_animation() const
     {
-        game_renderer::foundation_move_animation output;
-        output.frame = _foundation_move_animation.frame;
-        output.source_x = _foundation_move_animation.source_x;
-        output.source_y = _foundation_move_animation.source_y;
-        output.destination_index = _foundation_move_animation.destination_foundation_index;
-        output.moving_card = &_foundation_move_animation.moving_card;
-        if(_foundation_move_animation.has_previous_card)
+        game_renderer::stock_draw_animation output;
+        output.frame = _stock_draw_animation.frame;
+        output.moving_card = &_stock_draw_animation.moving_card;
+        return output;
+    }
+
+    void game_app::_begin_stock_recycle_animation()
+    {
+        _stock_recycle_animation = {};
+        _stock_recycle_animation.active = true;
+    }
+
+    void game_app::_complete_stock_recycle_animation()
+    {
+        if(! _game.draw_from_stock())
         {
-            output.previous_destination_card = &_foundation_move_animation.previous_card;
+            return;
+        }
+    }
+
+    void game_app::_reset_stock_recycle_animation()
+    {
+        _stock_recycle_animation = {};
+    }
+
+    game_renderer::stock_recycle_animation game_app::_renderer_stock_recycle_animation() const
+    {
+        game_renderer::stock_recycle_animation output;
+        output.frame = _stock_recycle_animation.frame;
+        return output;
+    }
+
+    void game_app::_begin_card_transfer_animation(const card& moving_card, int source_x, int source_y, int target_x,
+                                                  int target_y, bool show_previous_foundation_card,
+                                                  int previous_foundation_index,
+                                                  const card& previous_foundation_card)
+    {
+        bn::vector<card, 19> cards;
+        cards.push_back(moving_card);
+        _begin_card_transfer_animation(cards, source_x, source_y, target_x, target_y, 0, 0, 0, 0,
+                                       show_previous_foundation_card, previous_foundation_index,
+                                       previous_foundation_card);
+    }
+
+    void game_app::_begin_card_transfer_animation(const bn::vector<card, 19>& cards, int source_x, int source_y,
+                                                  int target_x, int target_y, int source_stack_step_x,
+                                                  int source_stack_step_y, int destination_stack_step_x,
+                                                  int destination_stack_step_y, bool show_previous_foundation_card,
+                                                  int previous_foundation_index,
+                                                  const card& previous_foundation_card)
+    {
+        _card_transfer_animation = {};
+        _card_transfer_animation.active = true;
+        _card_transfer_animation.source_x = source_x;
+        _card_transfer_animation.source_y = source_y;
+        _card_transfer_animation.target_x = target_x;
+        _card_transfer_animation.target_y = target_y;
+        _card_transfer_animation.source_stack_step_x = source_stack_step_x;
+        _card_transfer_animation.source_stack_step_y = source_stack_step_y;
+        _card_transfer_animation.destination_stack_step_x = destination_stack_step_x;
+        _card_transfer_animation.destination_stack_step_y = destination_stack_step_y;
+        _card_transfer_animation.cards = cards;
+        _card_transfer_animation.show_previous_foundation_card = show_previous_foundation_card;
+        _card_transfer_animation.previous_foundation_index = previous_foundation_index;
+        if(show_previous_foundation_card)
+        {
+            _card_transfer_animation.previous_foundation_card = previous_foundation_card;
+        }
+    }
+
+    void game_app::_reset_card_transfer_animation()
+    {
+        _card_transfer_animation = {};
+    }
+
+    game_renderer::card_transfer_animation game_app::_renderer_card_transfer_animation() const
+    {
+        game_renderer::card_transfer_animation output;
+        output.frame = _card_transfer_animation.frame;
+        output.source_x = _card_transfer_animation.source_x;
+        output.source_y = _card_transfer_animation.source_y;
+        output.target_x = _card_transfer_animation.target_x;
+        output.target_y = _card_transfer_animation.target_y;
+        output.cards_count = _card_transfer_animation.cards.size();
+        output.cards = output.cards_count > 0 ? _card_transfer_animation.cards.data() : nullptr;
+        output.source_stack_step_x = _card_transfer_animation.source_stack_step_x;
+        output.source_stack_step_y = _card_transfer_animation.source_stack_step_y;
+        output.destination_stack_step_x = _card_transfer_animation.destination_stack_step_x;
+        output.destination_stack_step_y = _card_transfer_animation.destination_stack_step_y;
+        output.show_previous_foundation_card = _card_transfer_animation.show_previous_foundation_card;
+        output.previous_foundation_index = _card_transfer_animation.previous_foundation_index;
+        if(_card_transfer_animation.show_previous_foundation_card)
+        {
+            output.previous_foundation_card = &_card_transfer_animation.previous_foundation_card;
         }
         return output;
     }
