@@ -380,9 +380,30 @@ namespace solitaire
             return;
         }
 
-        if(bn::keypad::l_pressed() || bn::keypad::r_pressed())
+        if(bn::keypad::r_pressed())
         {
             _handle_quick_send_to_foundation();
+            return;
+        }
+
+        if(bn::keypad::l_pressed())
+        {
+            const bool had_held_card = _game.has_held_card();
+            if(had_held_card)
+            {
+                _audio.on_cancel_pressed(true);
+                _game.cancel_held();
+            }
+
+            if(! _selection.is_stock_selected())
+            {
+                _selection.set_selected_pile({ pile_kind::stock, 0 });
+                if(! had_held_card)
+                {
+                    _audio.on_selection_changed();
+                }
+            }
+
             return;
         }
 
@@ -471,6 +492,11 @@ namespace solitaire
         if(! _game.has_held_card())
         {
             const pile_ref selected = _selection.selected_pile();
+            if(selected.kind == pile_kind::foundation)
+            {
+                return;
+            }
+
             if(! top_card_position_for_selection(_game, selected, source_x, source_y))
             {
                 _audio.on_place_attempt(false);
@@ -491,6 +517,11 @@ namespace solitaire
         }
         else
         {
+            if(_game.held_from().kind == pile_kind::foundation)
+            {
+                return;
+            }
+
             const table_selection::highlight_state highlight = _selection.highlight();
             source_x = highlight.x;
             source_y = highlight.y;
